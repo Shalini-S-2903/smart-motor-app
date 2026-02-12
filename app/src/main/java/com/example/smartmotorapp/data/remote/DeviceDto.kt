@@ -25,7 +25,23 @@ data class CommandStatusDto(
     @SerializedName("status") val status: String,
 )
 
+/** Device event (API GET /devices/{id}/events and SSE device_event). type: DRY_RUN | SAFETY_TIMER | TANK_FULL | OFFLINE | ONLINE. */
+data class EventDto(
+    @SerializedName("timestamp") val timestamp: String,
+    @SerializedName("type") val type: String,
+    @SerializedName("message") val message: String,
+)
+
+/** SSE device_event payload; includes device_id for routing to timeline. */
+data class DeviceEventDto(
+    @SerializedName("device_id") val deviceId: String,
+    @SerializedName("type") val type: String,
+    @SerializedName("message") val message: String,
+    @SerializedName("timestamp") val timestamp: String,
+)
+
 /** Response for GET /health. Used to detect backend connectivity. */
 data class HealthResponseDto(
     @SerializedName("status") val status: String,
+    @SerializedName("mqtt_connected") val mqttConnected: Boolean,
 )

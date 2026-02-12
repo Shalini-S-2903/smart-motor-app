@@ -4,45 +4,92 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.smartmotorapp.data.remote.CommandRequestDto
 import com.example.smartmotorapp.data.remote.DeviceDto
+import com.example.smartmotorapp.data.sse.SseClient
 import com.example.smartmotorapp.di.BackendProvider
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class HomeUiState(
-    val isLoading: Boolean = false,
-    val devices: List<DeviceDto> = emptyList(),
+    val isInitialLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
+    val devices: Map<String, DeviceDto> = emptyMap(),
+    val backendOffline: Boolean = false,
     val errorMessage: String? = null,
-    val turningId: String? = null, // device id currently sending a command
+    val turningId: String? = null,
     val snackbarMessage: String? = null,
 )
 
 class HomeViewModel : ViewModel() {
 
-    private val _uiState = MutableStateFlow(HomeUiState())
+    private val _uiState = MutableStateFlow(HomeUiState(isInitialLoading = true))
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     private val api by lazy { BackendProvider.api }
+    private val backendOfflineMessage = "Server unreachable"
 
-    private val backendOfflineMessage = "Backend offline"
+    private var sseClient: SseClient? = null
+    private var commandTimeoutJob: Job? = null
 
-    fun loadDevices() {
+    init {
+        startSse()
+    }
+
+    private fun startSse() {
+        sseClient?.stop()
+        sseClient = SseClient(
+            listener = { dto ->
+                viewModelScope.launch {
+                    withContext(Dispatchers.Main) {
+                        val current = _uiState.value
+                        val newMap = current.devices.toMutableMap().apply { put(dto.id, dto) }
+                        val wasTurning = current.turningId == dto.id
+                        val newTurningId = if (wasTurning) null else current.turningId
+                        if (wasTurning) commandTimeoutJob?.cancel()
+                        _uiState.value = current.copy(
+                            devices = newMap,
+                            turningId = newTurningId,
+                        )
+                    }
+                }
+            },
+            tokenProvider = { BackendProvider.tokenStore.getAccessToken() },
+            deviceEventListener = { BackendProvider.offerDeviceEvent(it) },
+        )
+        sseClient?.start()
+    }
+
+    fun loadDevices(initial: Boolean = false) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+            withContext(Dispatchers.Main) {
+                _uiState.value = _uiState.value.copy(
+                    isInitialLoading = initial,
+                    isRefreshing = !initial,
+                    backendOffline = false,
+                    errorMessage = null,
+                )
+            }
             runCatching {
                 val healthRes = api.health()
-                if (!healthRes.isSuccessful || healthRes.body()?.status != "ok") {
-                    throw Exception(backendOfflineMessage)
-                }
+                if (!healthRes.isSuccessful) throw Exception(backendOfflineMessage)
+                val health = healthRes.body() ?: throw Exception(backendOfflineMessage)
+                if (health.status != "ok" || !health.mqttConnected) throw Exception(backendOfflineMessage)
             }.fold(
                 onSuccess = { fetchDevices() },
-                onFailure = { e ->
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        errorMessage = if (e.message == backendOfflineMessage) backendOfflineMessage else (e.message ?: backendOfflineMessage),
-                    )
+                onFailure = {
+                    withContext(Dispatchers.Main) {
+                        _uiState.value = _uiState.value.copy(
+                            isInitialLoading = false,
+                            isRefreshing = false,
+                            backendOffline = true,
+                            errorMessage = backendOfflineMessage,
+                        )
+                    }
                 }
             )
         }
@@ -51,78 +98,67 @@ class HomeViewModel : ViewModel() {
     private suspend fun fetchDevices() {
         runCatching {
             val res = api.getDevices()
-            if (res.isSuccessful) {
-                res.body()?.devices ?: emptyList()
-            } else {
-                throw Exception(res.message() ?: "Failed to load devices")
-            }
+            if (res.isSuccessful) res.body()?.devices ?: emptyList()
+            else throw Exception(res.message() ?: "Failed to load devices")
         }.fold(
             onSuccess = { list ->
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    devices = list,
-                    errorMessage = null,
-                )
+                val map = list.associateBy { it.id }
+                withContext(Dispatchers.Main) {
+                    _uiState.value = _uiState.value.copy(
+                        isInitialLoading = false,
+                        isRefreshing = false,
+                        devices = map,
+                        backendOffline = false,
+                        errorMessage = null,
+                    )
+                }
             },
             onFailure = { e ->
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    errorMessage = e.message ?: "Unknown error",
-                )
+                withContext(Dispatchers.Main) {
+                    _uiState.value = _uiState.value.copy(
+                        isInitialLoading = false,
+                        isRefreshing = false,
+                        errorMessage = e.message ?: "Unknown error",
+                    )
+                }
             }
         )
     }
 
-    fun setDeviceOn(deviceId: String) {
-        sendCommand(deviceId, "ON")
-    }
-
-    fun setDeviceOff(deviceId: String) {
-        sendCommand(deviceId, "OFF")
-    }
+    fun setDeviceOn(deviceId: String) = sendCommand(deviceId, "ON")
+    fun setDeviceOff(deviceId: String) = sendCommand(deviceId, "OFF")
 
     private fun sendCommand(deviceId: String, action: String) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(turningId = deviceId)
-            runCatching {
-                // 1) send command, get command_id
-                val sendRes = api.sendCommand(deviceId, CommandRequestDto(action))
-                if (!sendRes.isSuccessful) {
-                    throw Exception(sendRes.message() ?: "Failed to send command")
-                }
-                val commandId = sendRes.body()?.commandId
-                    ?: throw Exception("Missing command_id")
+            withContext(Dispatchers.Main) {
+                _uiState.value = _uiState.value.copy(turningId = deviceId)
+            }
 
-                // 2) poll status every 1s up to 15s
-                val start = System.currentTimeMillis()
-                var status = "PENDING"
-                while (status == "PENDING" && System.currentTimeMillis() - start < 15_000) {
-                    delay(1_000)
-                    val statusRes = api.getCommandStatus(commandId)
-                    if (!statusRes.isSuccessful) {
-                        throw Exception(statusRes.message() ?: "Failed to read command status")
-                    }
-                    status = statusRes.body()?.status ?: "FAILED"
-                }
-                status
-            }.fold(
-                onSuccess = { status ->
-                    if (status == "SUCCESS") {
-                        loadDevices()
-                    } else {
+            commandTimeoutJob?.cancel()
+            commandTimeoutJob = viewModelScope.launch {
+                delay(15_000)
+                withContext(Dispatchers.Main) {
+                    if (_uiState.value.turningId == deviceId) {
                         _uiState.value = _uiState.value.copy(
-                            snackbarMessage = "Command failed for $deviceId",
+                            turningId = null,
+                            snackbarMessage = "Device did not respond",
                         )
                     }
-                    _uiState.value = _uiState.value.copy(turningId = null)
-                },
-                onFailure = { e ->
+                }
+            }
+
+            runCatching {
+                val sendRes = api.sendCommand(deviceId, CommandRequestDto(action))
+                if (!sendRes.isSuccessful) throw Exception("network")
+            }.onFailure {
+                commandTimeoutJob?.cancel()
+                withContext(Dispatchers.Main) {
                     _uiState.value = _uiState.value.copy(
                         turningId = null,
-                        snackbarMessage = e.message ?: "Command failed",
+                        snackbarMessage = "Network error while sending command",
                     )
                 }
-            )
+            }
         }
     }
 
@@ -132,5 +168,11 @@ class HomeViewModel : ViewModel() {
 
     fun clearSnackbar() {
         _uiState.value = _uiState.value.copy(snackbarMessage = null)
+    }
+
+    override fun onCleared() {
+        sseClient?.stop()
+        commandTimeoutJob?.cancel()
+        super.onCleared()
     }
 }

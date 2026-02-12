@@ -1,10 +1,15 @@
 package com.example.smartmotorapp.data
 
+import com.example.smartmotorapp.BuildConfig
+
 /**
- * Backend base URL (no trailing slash). Retrofit will use this + "/" as baseUrl.
- * - Emulator: http://10.0.2.2:8000 (10.0.2.2 = host machine)
- * - Physical device: use your machine's LAN IP, e.g. http://192.168.1.5:8000
+ * Backend base URL derived from BuildConfig.
+ *
+ * - Debug builds: http://10.0.2.2:8000/  (emulator → local backend)
+ * - Release builds: https://YOUR_RENDER_URL/ (public Render backend)
+ *
+ * Values are configured in `build.gradle.kts` via `buildConfigField`.
  */
 object BackendConfig {
-    const val BACKEND_BASE_URL = "http://10.0.2.2:8000"
+    val baseUrl: String = BuildConfig.BASE_URL.trimEnd('/')
 }

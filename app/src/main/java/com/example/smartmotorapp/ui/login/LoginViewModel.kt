@@ -2,7 +2,8 @@ package com.example.smartmotorapp.ui.login
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.delay
+import com.example.smartmotorapp.data.remote.LoginRequestDto
+import com.example.smartmotorapp.di.BackendProvider
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,54 +21,48 @@ class LoginViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(LoginUiState())
     val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
 
+    private val authApi get() = BackendProvider.authApi
+    private val tokenStore get() = BackendProvider.tokenStore
+
     fun clearError() {
         _uiState.update { it.copy(errorMessage = null) }
     }
 
-    fun login(
-        email: String,
-        password: String,
-        countryCode: String = DEFAULT_COUNTRY_CODE,
-    ) {
-        if (_uiState.value.isLoading) return  // prevent double tap
+    fun login(email: String, password: String) {
+        if (_uiState.value.isLoading) return
 
         if (email.isBlank() || password.isBlank()) {
-            _uiState.update {
-                it.copy(errorMessage = "Email and password are required")
-            }
+            _uiState.update { it.copy(errorMessage = "Email and password are required") }
             return
         }
 
-        _uiState.update {
-            it.copy(isLoading = true, errorMessage = null)
-        }
+        _uiState.update { it.copy(isLoading = true, errorMessage = null) }
 
-        // Stub login: pretend it succeeded (since real Tuya SDK is removed).
         viewModelScope.launch {
-            delay(500)
-            _uiState.update {
-                it.copy(
-                    isLoading = false,
-                    isLoggedIn = true,
-                    errorMessage = null,
-                )
-            }
-        }
-    }
-
-    /** Dev-only: skip real login and mark as logged in (for testing without Tuya SDK). */
-    fun devLoginBypass() {
-        _uiState.update {
-            it.copy(
-                isLoggedIn = true,
-                errorMessage = null,
-                isLoading = false,
+            runCatching {
+                val res = authApi.login(LoginRequestDto(email = email.trim(), password = password))
+                if (!res.isSuccessful) {
+                    val msg = res.errorBody()?.string() ?: "Login failed"
+                    throw Exception(msg)
+                }
+                val body = res.body() ?: throw Exception("No token in response")
+                tokenStore.saveTokens(body.accessToken, body.refreshToken)
+            }.fold(
+                onSuccess = {
+                    _uiState.update {
+                        it.copy(isLoading = false, isLoggedIn = true, errorMessage = null)
+                    }
+                },
+                onFailure = { e ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            isLoggedIn = false,
+                            errorMessage = e.message ?: "Login failed",
+                        )
+                    }
+                },
             )
         }
     }
-
-    companion object {
-        private const val DEFAULT_COUNTRY_CODE = "91"
-    }
 }
-
