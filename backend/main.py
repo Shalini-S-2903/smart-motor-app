@@ -79,7 +79,7 @@ class DevicesResponse(BaseModel):
 
 
 class CommandRequest(BaseModel):
-    action: str  # \"ON\" | \"OFF\" (simple validation below)
+    action: str  # "ON" | "OFF" (simple validation below)
 
 
 class CommandStatus(BaseModel):
@@ -145,32 +145,32 @@ def get_device(device_id: str):
 @app.post("/devices/{device_id}/on")
 def device_on(device_id: str):
     # Backwards-compat shim: maps to unified /command
-    return send_command(device_id, CommandRequest(action=\"ON\"))
+    return send_command(device_id, CommandRequest(action="ON"))
 
 
 @app.post("/devices/{device_id}/off")
 def device_off(device_id: str):
     # Backwards-compat shim
-    return send_command(device_id, CommandRequest(action=\"OFF\"))
+    return send_command(device_id, CommandRequest(action="OFF"))
 
 
 @app.post("/devices/{device_id}/unlock")
 def device_unlock(device_id: str):
-    app.state.mqtt.create_command(device_id, \"UNLOCK\")
+    app.state.mqtt.create_command(device_id, "UNLOCK")
     return {"status": "sent", "device_id": device_id, "action": "UNLOCK"}
 
 
 @app.post("/devices/{device_id}/reprovision_wifi")
 def reprovision_wifi(device_id: str):
-    app.state.mqtt.create_command(device_id, \"REPROVISION_WIFI\")
+    app.state.mqtt.create_command(device_id, "REPROVISION_WIFI")
     return {"status": "sent", "device_id": device_id, "action": "REPROVISION_WIFI"}
 
 
 @app.post("/devices/{device_id}/command", response_model=CommandStatus)
 def send_command(device_id: str, req: CommandRequest):
     action = req.action.upper()
-    if action not in {\"ON\", \"OFF\"}:
-        raise HTTPException(status_code=400, detail=\"action must be 'ON' or 'OFF'\")
+    if action not in {"ON", "OFF"}:
+        raise HTTPException(status_code=400, detail="action must be 'ON' or 'OFF'")
 
     svc: MQTTService = app.state.mqtt
     cmd_id = svc.create_command(device_id, action)
@@ -178,12 +178,12 @@ def send_command(device_id: str, req: CommandRequest):
     return _build_command_status(cmd_id, info)
 
 
-@app.get(\"/commands/{command_id}\", response_model=CommandStatus)
+@app.get("/commands/{command_id}", response_model=CommandStatus)
 def get_command_status(command_id: str):
     svc: MQTTService = app.state.mqtt
     info = svc.get_command(command_id)
     if not info:
-        raise HTTPException(status_code=404, detail=\"command not found\")
+        raise HTTPException(status_code=404, detail="command not found")
     return _build_command_status(command_id, info)
 
 
@@ -203,19 +203,19 @@ def _build_command_status(command_id: str, info: dict | None) -> CommandStatus:
         now = datetime.now(tz=timezone.utc)
         return CommandStatus(
             command_id=command_id,
-            device_id=\"unknown\",
-            action=\"UNKNOWN\",
-            status=\"UNKNOWN\",
+            device_id="unknown",
+            action="UNKNOWN",
+            status="UNKNOWN",
             created_at=now,
             updated_at=now,
         )
-    created_ts = info.get(\"created_at_ts\", time.time())
-    updated_ts = info.get(\"updated_at_ts\", created_ts)
+    created_ts = info.get("created_at_ts", time.time())
+    updated_ts = info.get("updated_at_ts", created_ts)
     return CommandStatus(
         command_id=command_id,
-        device_id=info.get(\"device_id\", \"unknown\"),
-        action=info.get(\"action\", \"UNKNOWN\"),
-        status=info.get(\"status\", \"PENDING\"),
+        device_id=info.get("device_id", "unknown"),
+        action=info.get("action", "UNKNOWN"),
+        status=info.get("status", "PENDING"),
         created_at=datetime.fromtimestamp(created_ts, tz=timezone.utc),
         updated_at=datetime.fromtimestamp(updated_ts, tz=timezone.utc),
     )
