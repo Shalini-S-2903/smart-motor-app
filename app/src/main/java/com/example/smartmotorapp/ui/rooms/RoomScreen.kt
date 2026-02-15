@@ -23,11 +23,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
-import com.example.smartmotorapp.R
-import com.example.smartmotorapp.ui.components.DeviceCard
 import com.example.smartmotorapp.ui.components.RoomCard
 
 @Composable
@@ -98,7 +97,7 @@ fun RoomScreen(
             modifier = Modifier.padding(16.dp)
         ) {
             Icon(
-                painter = painterResource(R.drawable.ic_add),
+                imageVector = Icons.Default.Add,
                 contentDescription = "Add Room",
                 modifier = Modifier.size(24.dp)
             )

@@ -3,6 +3,7 @@ package com.example.smartmotorapp.ui.adddevice
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.smartmotorapp.data.remote.ClaimRequestDto
+import com.example.smartmotorapp.data.remote.ClaimResponseDto
 import com.example.smartmotorapp.di.BackendProvider
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,7 +22,7 @@ class AddDeviceViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(AddDeviceUiState())
     val uiState: StateFlow<AddDeviceUiState> = _uiState.asStateFlow()
 
-    private val authApi get() = BackendProvider.authApi
+    private val api get() = BackendProvider.api
 
     fun clearError() {
         _uiState.update { it.copy(errorMessage = null) }
@@ -39,14 +40,14 @@ class AddDeviceViewModel : ViewModel() {
 
         viewModelScope.launch {
             runCatching {
-                val res = authApi.claimDevice(ClaimRequestDto(pairCode = pairCode.trim()))
+                val res = api.claimDevice(ClaimRequestDto(pairCode = pairCode.trim()))
                 if (!res.isSuccessful) {
                     val msg = res.errorBody()?.string() ?: "Failed to claim device"
                     throw Exception(msg)
                 }
                 res.body()
             }.fold(
-                onSuccess = { result ->
+                onSuccess = { _: ClaimResponseDto? ->
                     _uiState.update {
                         it.copy(
                             isLoading = false,
@@ -55,7 +56,7 @@ class AddDeviceViewModel : ViewModel() {
                         )
                     }
                 },
-                onFailure = { e ->
+                onFailure = { e: Throwable ->
                     _uiState.update {
                         it.copy(
                             isLoading = false,

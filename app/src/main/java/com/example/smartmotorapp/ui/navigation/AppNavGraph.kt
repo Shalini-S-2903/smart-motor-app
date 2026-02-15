@@ -93,13 +93,8 @@ fun AppNavGraph(
         composable("addDevice") {
             val viewModel: AddDeviceViewModel = viewModel()
             AddDeviceScreen(
-                onClaimSuccess = {
-                    navController.popBackStack()
-                },
-                onBack = {
-                    navController.popBackStack()
-                },
                 viewModel = viewModel,
+                onNavigateBack = { navController.popBackStack() },
             )
         }
 

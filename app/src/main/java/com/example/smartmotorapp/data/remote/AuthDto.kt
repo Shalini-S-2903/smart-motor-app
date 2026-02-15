@@ -22,7 +22,3 @@ data class TokenResponseDto(
     @SerializedName("token_type") val tokenType: String = "bearer",
     @SerializedName("expires_in") val expiresIn: Int,
 )
-
-data class ClaimRequestDto(
-    @SerializedName("pair_code") val pairCode: String,
-)
