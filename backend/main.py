@@ -26,7 +26,10 @@ from auth import ClaimRequest, get_current_user, router as auth_router
 from db import get_db, init_db
 from mqtt_service import MQTTService
 from motor_monitor import MotorMonitor
-from models import User, Device, DeviceOwnership, DevicePairingSession, DeviceEvent
+from models import User, Device, DeviceOwnership, DevicePairingSession, DeviceEvent, UserActivity
+from room_models import Room, RoomDevice, Schedule
+from room_routes import router as room_routes
+from alexa_routes import router as alexa_routes
 
 # ---------------------------------------------------------------------------
 # Device event reason -> human-readable message (never expose raw reason to frontend)
@@ -137,6 +140,8 @@ app = FastAPI(
 )
 
 app.include_router(auth_router)
+app.include_router(room_routes)
+app.include_router(alexa_routes)
 
 # ---------------------------------------------------------------------------
 # CORS (safe for development; restrict in production if needed)
@@ -330,7 +335,18 @@ def device_on(
     db: Annotated[Session, Depends(get_db)],
 ):
     _require_device_ownership(db, current_user.id, device_id)
-    return send_command(device_id, CommandRequest(action="ON"))
+    
+    # Track device ON activity
+    activity = UserActivity(
+        user_id=current_user.id,
+        activity_type="DEVICE_ON",
+        device_id=device_id,
+        details=f"Turned ON device {device_id}"
+    )
+    db.add(activity)
+    db.commit()
+    
+    return send_command(device_id, CommandRequest(action="ON"), current_user, db)
 
 
 @app.post("/devices/{device_id}/off")
@@ -340,7 +356,18 @@ def device_off(
     db: Annotated[Session, Depends(get_db)],
 ):
     _require_device_ownership(db, current_user.id, device_id)
-    return send_command(device_id, CommandRequest(action="OFF"))
+    
+    # Track device OFF activity
+    activity = UserActivity(
+        user_id=current_user.id,
+        activity_type="DEVICE_OFF",
+        device_id=device_id,
+        details=f"Turned OFF device {device_id}"
+    )
+    db.add(activity)
+    db.commit()
+    
+    return send_command(device_id, CommandRequest(action="OFF"), current_user, db)
 
 
 @app.post("/devices/{device_id}/unlock")

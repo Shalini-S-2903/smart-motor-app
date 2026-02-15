@@ -5,6 +5,7 @@ import com.example.smartmotorapp.data.BackendConfig
 import com.example.smartmotorapp.data.TokenStore
 import com.example.smartmotorapp.data.remote.AuthApi
 import com.example.smartmotorapp.data.remote.BackendApi
+import com.example.smartmotorapp.data.remote.RoomApi
 import com.example.smartmotorapp.data.remote.DeviceEventDto
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,6 +47,10 @@ object BackendProvider {
     private var _api: BackendApi? = null
     val api: BackendApi
         get() = _api ?: error("BackendProvider not initialized. Call init(context) first.")
+
+    private var _roomApi: RoomApi? = null
+    val roomApi: RoomApi
+        get() = _roomApi ?: error("BackendProvider not initialized. Call init(context) first.")
 
     private var _deviceEventScope: CoroutineScope? = null
     private var _deviceEventFlow: MutableSharedFlow<DeviceEventDto>? = null
@@ -96,6 +101,7 @@ object BackendProvider {
             .build()
 
         _api = retrofit.create(BackendApi::class.java)
+        _roomApi = retrofit.create(RoomApi::class.java)
         _deviceEventScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
         _deviceEventFlow = MutableSharedFlow(extraBufferCapacity = 64)
     }

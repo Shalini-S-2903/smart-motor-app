@@ -77,3 +77,15 @@ class Command(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     completed_at = Column(DateTime(timezone=True), nullable=True)
 
+
+class UserActivity(Base):
+    """Track user login activity and device interactions."""
+    __tablename__ = "user_activities"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    activity_type = Column(String, nullable=False)  # LOGIN, LOGOUT, DEVICE_ON, DEVICE_OFF, etc.
+    device_id = Column(String, ForeignKey("devices.id"), nullable=True, index=True)
+    timestamp = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    details = Column(String, nullable=True)  # Optional JSON or free-form details
+

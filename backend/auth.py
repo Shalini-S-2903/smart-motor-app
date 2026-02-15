@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from db import get_db
-from models import User
+from models import User, UserActivity
 
 # ---------------------------------------------------------------------------
 # Config
@@ -185,6 +185,16 @@ def login(req: LoginRequest, db: Annotated[Session, Depends(get_db)]):
         )
     access = create_access_token(user.id, user.email)
     refresh = create_refresh_token(user.id, user.email)
+    
+    # Track login activity
+    activity = UserActivity(
+        user_id=user.id,
+        activity_type="LOGIN",
+        details=f"Login from {req.email}"
+    )
+    db.add(activity)
+    db.commit()
+    
     return TokenResponse(
         access_token=access,
         refresh_token=refresh,
