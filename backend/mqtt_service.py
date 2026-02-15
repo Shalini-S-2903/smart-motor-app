@@ -156,6 +156,8 @@ class MQTTService:
             client.subscribe("/devices/+/heartbeat")
             client.subscribe("/devices/+/ack")
             client.subscribe("/devices/+/pairing")
+            
+
         else:
             logger.error("MQTT connection failed rc=%s", rc)
 

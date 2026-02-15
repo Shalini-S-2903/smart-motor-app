@@ -4,6 +4,7 @@ Uses python-jose for JWT and passlib bcrypt for password hashing.
 """
 
 import hashlib
+import logging
 import os
 from datetime import datetime, timezone, timedelta
 from typing import Annotated
@@ -29,6 +30,7 @@ REFRESH_TOKEN_EXPIRE_DAYS = 7
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer(auto_error=False)
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -64,9 +66,9 @@ class RefreshRequest(BaseModel):
 # Password hashing
 # ---------------------------------------------------------------------------
 
-def _normalize_password(password: str) -> bytes:
-    # bcrypt max 72 bytes → pre-hash using SHA256
-    return hashlib.sha256(password.encode("utf-8")).digest()
+def _normalize_password(password: str) -> str:
+    # bcrypt max 72 bytes; pre-hash with SHA256 and pass as str (hex) for compatibility everywhere
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 
 def hash_password(password: str) -> str:
@@ -165,14 +167,22 @@ def register(req: RegisterRequest, db: Annotated[Session, Depends(get_db)]):
     existing = db.query(User).filter(User.email == req.email).first()
     if existing:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
-    user = User(
-        email=req.email,
-        password_hash=hash_password(req.password),
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return {"id": user.id, "email": user.email}
+    try:
+        user = User(
+            email=req.email,
+            password_hash=hash_password(req.password),
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        return {"id": user.id, "email": user.email}
+    except Exception as e:
+        db.rollback()
+        logger.exception("Register failed: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
 
 
 @router.post("/login", response_model=TokenResponse)

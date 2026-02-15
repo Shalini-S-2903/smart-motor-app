@@ -58,6 +58,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("smartmotor-backend")
 
 # ---------------------------------------------------------------------------
+# Global SSE broadcast (MQTT → event_queue → all client queues)
+# ---------------------------------------------------------------------------
+
+event_queue: asyncio.Queue = asyncio.Queue()
+
+# ---------------------------------------------------------------------------
 # App lifecycle (Render-safe)
 # ---------------------------------------------------------------------------
 
@@ -67,7 +73,6 @@ async def lifespan(app: FastAPI):
     init_db()
 
     loop = asyncio.get_running_loop()
-    event_queue: asyncio.Queue = asyncio.Queue()
     client_queues: set[asyncio.Queue] = set()
 
     async def broadcast_worker() -> None:
@@ -238,16 +243,16 @@ def get_devices(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    allowed = _user_device_ids(db, current_user.id)
+    # 1) All devices owned by the authenticated user (from DB)
+    owned_ids = _user_device_ids(db, current_user.id)
+    # 2) Runtime state from MQTT snapshot
     svc: MQTTService = app.state.mqtt
     snapshot = svc.snapshot_states()
-
+    # 3) For each owned device: merge DB ownership with snapshot (or offline skeleton)
     devices = [
-        build_device_state(device_id, state)
-        for device_id, state in snapshot.items()
-        if device_id in allowed
+        build_device_state(device_id, snapshot.get(device_id))
+        for device_id in owned_ids
     ]
-
     return DevicesResponse(devices=devices)
 
 
@@ -432,6 +437,12 @@ def get_command_status(
     return _build_command_status(command_id, info)
 
 
+@app.get("/")
+def root():
+    """Root path for Render health checks; returns 200 so the service stays live."""
+    return {"status": "ok", "service": "smartmotor-backend"}
+
+
 @app.get("/health")
 def health():
     svc: MQTTService = app.state.mqtt
@@ -444,39 +455,87 @@ def health():
 
 async def _sse_stream(client_queue: asyncio.Queue, client_queues: set) -> AsyncGenerator[str, None]:
     try:
+        # Send immediately so client gets data and proxies flush (prevents Android timeout)
+        yield f"data: {json.dumps({'type': 'connected'})}\n\n"
         while True:
             try:
                 payload = await asyncio.wait_for(client_queue.get(), timeout=20.0)
             except asyncio.TimeoutError:
                 yield ": heartbeat\n\n"
                 continue
-            # device_event uses sse_event for event name; data omits it
+            # Valid SSE frame: data line (event line optional for compatibility)
             if "sse_event" in payload:
                 event_type = payload["sse_event"]
                 data_payload = {k: v for k, v in payload.items() if k != "sse_event"}
             else:
                 event_type = payload.get("type", "message")
                 data_payload = payload
-            data = json.dumps(data_payload, separators=(",", ":"))
-            yield f"event: {event_type}\ndata: {data}\n\n"
+            data_str = json.dumps(data_payload, separators=(",", ":"))
+            yield f"event: {event_type}\ndata: {data_str}\n\n"
     finally:
         client_queues.discard(client_queue)
 
 
 @app.get("/events")
-def stream_events(
+async def stream_events(
     request: Request,
     current_user: Annotated[User, Depends(get_current_user)],
 ):
     """
-    Server-Sent Events: stream device_update whenever MQTT receives heartbeat/state/power/ack.
-    Content-Type: text/event-stream. Kept open; heartbeat every 20s.
+    Server-Sent Events: stream device_update and device_event. Immediate first byte to prevent timeout.
     """
     client_queues: set[asyncio.Queue] = request.app.state.sse_client_queues
     client_queue: asyncio.Queue = asyncio.Queue()
     client_queues.add(client_queue)
     return StreamingResponse(
         _sse_stream(client_queue, client_queues),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.get("/devices/{device_id}/stream")
+async def device_events_stream(
+    device_id: str,
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """SSE stream filtered to one device (device_update and device_event for this device_id)."""
+    allowed = _user_device_ids(db, current_user.id)
+    if device_id not in allowed:
+        raise HTTPException(status_code=404, detail="Device not found")
+    client_queues = request.app.state.sse_client_queues
+    client_queue: asyncio.Queue = asyncio.Queue()
+    client_queues.add(client_queue)
+
+    async def device_filtered_stream():
+        try:
+            yield f"data: {json.dumps({'type': 'connected', 'device_id': device_id})}\n\n"
+            while True:
+                try:
+                    payload = await asyncio.wait_for(client_queue.get(), timeout=20.0)
+                except asyncio.TimeoutError:
+                    yield ": heartbeat\n\n"
+                    continue
+                if payload.get("device_id") == device_id or payload.get("device", {}).get("id") == device_id:
+                    if "sse_event" in payload:
+                        event_type = payload["sse_event"]
+                        data_payload = {k: v for k, v in payload.items() if k != "sse_event"}
+                    else:
+                        event_type = payload.get("type", "message")
+                        data_payload = payload
+                    data_str = json.dumps(data_payload, separators=(",", ":"))
+                    yield f"event: {event_type}\ndata: {data_str}\n\n"
+        finally:
+            client_queues.discard(client_queue)
+
+    return StreamingResponse(
+        device_filtered_stream(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
