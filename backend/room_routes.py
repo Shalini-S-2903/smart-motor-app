@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Annotated, List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -33,6 +33,19 @@ class RoomResponse(BaseModel):
 
 class RoomDeviceAdd(BaseModel):
     device_id: str
+
+
+class RoomCommandRequest(BaseModel):
+    action: str  # "ON" | "OFF"
+
+
+class RoomCommandIssued(BaseModel):
+    device_id: str
+    command_id: str
+
+
+class RoomCommandResponse(BaseModel):
+    issued: List[RoomCommandIssued]
 
 
 class ScheduleCreate(BaseModel):
@@ -160,27 +173,95 @@ def delete_room(
     return {"message": "Room deleted successfully"}
 
 
+@router.post("/{room_id}/command", response_model=RoomCommandResponse)
+def room_command(
+    room_id: int,
+    body: RoomCommandRequest,
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Send ON/OFF to all devices in the room via existing MQTT command system."""
+    room = db.query(Room).filter(Room.id == room_id, Room.user_id == current_user.id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+
+    action = body.action.upper()
+    if action not in ("ON", "OFF"):
+        raise HTTPException(status_code=400, detail="action must be 'ON' or 'OFF'")
+
+    room_devices = db.query(RoomDevice).filter(RoomDevice.room_id == room_id).all()
+    device_ids = [rd.device_id for rd in room_devices]
+    if not device_ids:
+        return RoomCommandResponse(issued=[])
+
+    # Only command devices the user owns
+    allowed = {r[0] for r in db.query(DeviceOwnership.device_id).filter(
+        DeviceOwnership.user_id == current_user.id,
+        DeviceOwnership.device_id.in_(device_ids),
+    ).all()}
+
+    mqtt_service = request.app.state.mqtt
+    issued = []
+    for device_id in device_ids:
+        if device_id not in allowed:
+            continue
+        cmd_id = mqtt_service.create_command(device_id, action)
+        issued.append(RoomCommandIssued(device_id=device_id, command_id=cmd_id))
+
+    return RoomCommandResponse(issued=issued)
+
+
 # ---------------------------------------------------------------------------
 # Room device endpoints
 # ---------------------------------------------------------------------------
+
+def _device_state_from_snapshot(device_id: str, state: dict | None) -> dict:
+    """Build device state dict matching GET /devices shape (id, online, last_seen, last_state, last_power)."""
+    if not state:
+        return {
+            "id": device_id,
+            "online": False,
+            "last_seen": None,
+            "last_state": None,
+            "last_power": None,
+        }
+    ts = state.get("last_seen_ts")
+    last_seen = (
+        datetime.fromtimestamp(ts, tz=timezone.utc) if ts else None
+    )
+    return {
+        "id": device_id,
+        "online": state.get("online", False),
+        "last_seen": last_seen.isoformat() if last_seen else None,
+        "last_state": state.get("last_state"),
+        "last_power": state.get("last_power"),
+    }
+
 
 @router.get("/{room_id}/devices")
 def get_room_devices(
     room_id: int,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    request: Request,
 ):
-    """Get all devices in a room."""
+    """Get all devices in a room with same live state as GET /devices (online, last_state, last_power)."""
     room = db.query(Room).filter(Room.id == room_id, Room.user_id == current_user.id).first()
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
-    
+
     room_devices = db.query(RoomDevice).filter(RoomDevice.room_id == room_id).all()
     device_ids = [rd.device_id for rd in room_devices]
-    
-    devices = db.query(Device).filter(Device.id.in_(device_ids)).all()
-    
-    return [{"id": d.id, "first_seen": d.first_seen} for d in devices]
+
+    snapshot = {}
+    if hasattr(request.app.state, "mqtt") and request.app.state.mqtt is not None:
+        snapshot = request.app.state.mqtt.snapshot_states()
+
+    return [
+        _device_state_from_snapshot(device_id, snapshot.get(device_id))
+        for device_id in device_ids
+    ]
 
 
 @router.post("/{room_id}/devices")

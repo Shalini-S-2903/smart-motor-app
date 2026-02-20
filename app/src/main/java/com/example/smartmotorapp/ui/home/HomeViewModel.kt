@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.smartmotorapp.data.remote.CommandRequestDto
 import com.example.smartmotorapp.data.remote.DeviceDto
+import com.example.smartmotorapp.data.remote.RoomDto
 import com.example.smartmotorapp.data.sse.SseClient
 import com.example.smartmotorapp.di.BackendProvider
 import kotlinx.coroutines.Dispatchers
@@ -32,6 +33,9 @@ class HomeViewModel : ViewModel() {
 
     private val api by lazy { BackendProvider.api }
     private val backendOfflineMessage = "Server unreachable"
+
+    private val _rooms = MutableStateFlow<List<RoomDto>>(emptyList())
+    val rooms: StateFlow<List<RoomDto>> = _rooms.asStateFlow()
 
     private var sseClient: SseClient? = null
     private var commandTimeoutJob: Job? = null
@@ -64,6 +68,14 @@ class HomeViewModel : ViewModel() {
         sseClient?.start()
     }
 
+    fun loadRooms() {
+        viewModelScope.launch {
+            try {
+                _rooms.value = api.getRooms().body() ?: emptyList()
+            } catch (_: Exception) { }
+        }
+    }
+
     fun loadDevices(initial: Boolean = false) {
         viewModelScope.launch {
             withContext(Dispatchers.Main) {
@@ -80,7 +92,10 @@ class HomeViewModel : ViewModel() {
                 val health = healthRes.body() ?: throw Exception(backendOfflineMessage)
                 if (health.status != "ok" || !health.mqttConnected) throw Exception(backendOfflineMessage)
             }.fold(
-                onSuccess = { fetchDevices() },
+                onSuccess = {
+                    loadRooms()
+                    fetchDevices()
+                },
                 onFailure = {
                     withContext(Dispatchers.Main) {
                         _uiState.value = _uiState.value.copy(

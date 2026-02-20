@@ -1,5 +1,6 @@
 package com.example.smartmotorapp.data.remote
 
+import com.google.gson.annotations.SerializedName
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
@@ -53,12 +54,12 @@ interface RoomApi {
 }
 
 data class RoomDto(
-    val id: Int,
-    val name: String,
-    val description: String?,
-    val createdAt: String,
-    val isActive: Boolean,
-    val deviceCount: Int
+    @SerializedName("id") val id: Int,
+    @SerializedName("name") val name: String,
+    @SerializedName("description") val description: String?,
+    @SerializedName("created_at") val createdAt: String,
+    @SerializedName("is_active") val isActive: Boolean,
+    @SerializedName("device_count") val deviceCount: Int
 )
 
 data class RoomCreateDto(

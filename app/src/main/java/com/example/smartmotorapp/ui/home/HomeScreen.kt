@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.smartmotorapp.data.remote.DeviceDto
+import com.example.smartmotorapp.data.remote.RoomDto
 import kotlinx.coroutines.delay
 
 private const val POWER_MAX_W = 1000
@@ -33,11 +34,13 @@ private const val POWER_MAX_W = 1000
 @Composable
 fun HomeScreen(
     onDeviceClick: (String) -> Unit = {},
+    onRoomClick: (Int, String) -> Unit = { _, _ -> },
     onAddDevice: () -> Unit = {},
     onLogout: () -> Unit = {},
     viewModel: HomeViewModel = viewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val rooms by viewModel.rooms.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) {
@@ -130,6 +133,26 @@ fun HomeScreen(
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
+                    item {
+                        Text(
+                            "Rooms",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(bottom = 8.dp),
+                        )
+                    }
+                    items(rooms, key = { it.id }) { room ->
+                        RoomCard(
+                            room = room,
+                            onClick = { onRoomClick(room.id, room.name) },
+                        )
+                    }
+                    item {
+                        Text(
+                            "Devices",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
+                        )
+                    }
                     items(deviceList, key = { it.id }) { device ->
                         DeviceRow(
                             device = device,
@@ -141,6 +164,34 @@ fun HomeScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun RoomCard(
+    room: RoomDto,
+    onClick: () -> Unit = {},
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+        ) {
+            Text(
+                text = room.name,
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = "${room.deviceCount} devices",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
         }
     }
 }

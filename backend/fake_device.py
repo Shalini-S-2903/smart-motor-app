@@ -13,7 +13,7 @@ PORT = int(os.getenv("MQTT_PORT", "1883"))
 USERNAME = os.getenv("MQTT_USERNAME") or None
 PASSWORD = os.getenv("MQTT_PASSWORD") or None
 
-DEVICE_ID = "TEST_MOTOR_1"
+DEVICE_ID = os.getenv("FAKE_DEVICE_ID", "TEST_MOTOR_1")
 
 # Topics
 BASE = f"/devices/{DEVICE_ID}"
@@ -27,12 +27,14 @@ state = "OFF"
 
 def on_connect(client, userdata, flags, rc):
     print("Connected to broker", rc)
+    print("Subscribing to:", TOPIC_COMMAND)
     client.subscribe(TOPIC_COMMAND)
 
 def on_message(client, userdata, msg):
     global state
 
-    print("COMMAND RECEIVED:", msg.payload.decode())
+    print("RECEIVED TOPIC:", msg.topic)
+    print("RECEIVED PAYLOAD:", msg.payload)
 
     try:
         payload = json.loads(msg.payload.decode())
@@ -41,8 +43,13 @@ def on_message(client, userdata, msg):
 
         if action == "ON":
             state = "ON"
+            print("Executing: ON")
         elif action == "OFF":
             state = "OFF"
+            print("Executing: OFF")
+        else:
+            print("Unknown action:", action)
+            return
 
         # simulate relay delay
         time.sleep(1)
@@ -54,6 +61,10 @@ def on_message(client, userdata, msg):
 
         client.publish(TOPIC_ACK, json.dumps(ack))
         print("ACK SENT:", ack)
+
+        # Publish new state so app/backend see it immediately
+        client.publish(TOPIC_STATE, state)
+        print("STATE SENT:", state)
 
     except Exception as e:
         print("Invalid command", e)

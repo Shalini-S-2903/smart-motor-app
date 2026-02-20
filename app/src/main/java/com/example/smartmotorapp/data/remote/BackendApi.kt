@@ -2,6 +2,7 @@ package com.example.smartmotorapp.data.remote
 
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
@@ -18,6 +19,30 @@ interface BackendApi {
 
     @GET("devices")
     suspend fun getDevices(): Response<DevicesResponseDto>
+
+    @GET("rooms/")
+    suspend fun getRooms(): Response<List<RoomDto>>
+
+    @GET("rooms/{roomId}/devices")
+    suspend fun getRoomDevices(@Path("roomId") roomId: Int): Response<List<DeviceDto>>
+
+    @POST("rooms/{roomId}/devices")
+    suspend fun addDeviceToRoom(
+        @Path("roomId") roomId: Int,
+        @Body body: Map<String, String>,
+    ): Response<Unit>
+
+    @DELETE("rooms/{roomId}/devices/{deviceId}")
+    suspend fun removeDeviceFromRoom(
+        @Path("roomId") roomId: Int,
+        @Path("deviceId") deviceId: String,
+    ): Response<Unit>
+
+    @POST("rooms/{roomId}/command")
+    suspend fun controlRoom(
+        @Path("roomId") roomId: Int,
+        @Body body: Map<String, String>,
+    ): Response<Unit>
 
     @GET("devices/{deviceId}")
     suspend fun getDevice(@Path("deviceId") deviceId: String): Response<DeviceDto>

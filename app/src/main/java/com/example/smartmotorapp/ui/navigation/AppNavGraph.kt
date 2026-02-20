@@ -20,7 +20,11 @@ import com.example.smartmotorapp.ui.login.LoginScreen
 import com.example.smartmotorapp.ui.login.LoginViewModel
 import com.example.smartmotorapp.ui.register.RegisterScreen
 import com.example.smartmotorapp.ui.register.RegisterViewModel
+import com.example.smartmotorapp.ui.roomdetail.RoomDetailScreen
+import com.example.smartmotorapp.ui.roomdetail.RoomDetailViewModel
 import com.example.smartmotorapp.ui.splash.SplashScreen
+import java.net.URLDecoder
+import java.net.URLEncoder
 
 @Composable
 fun AppNavGraph(
@@ -79,6 +83,10 @@ fun AppNavGraph(
             val viewModel: HomeViewModel = viewModel()
             HomeScreen(
                 onDeviceClick = { deviceId -> navController.navigate("deviceDetail/$deviceId") },
+                onRoomClick = { roomId, roomName ->
+                    val encodedName = URLEncoder.encode(roomName, Charsets.UTF_8.name())
+                    navController.navigate("room/$roomId/$encodedName")
+                },
                 onAddDevice = { navController.navigate("addDevice") },
                 onLogout = {
                     BackendProvider.tokenStore.clear()
@@ -108,6 +116,25 @@ fun AppNavGraph(
             )
             DeviceDetailScreen(
                 deviceId = deviceId,
+                onBack = { navController.popBackStack() },
+                viewModel = viewModel,
+            )
+        }
+
+        composable(
+            route = "room/{roomId}/{roomName}",
+            arguments = listOf(
+                navArgument("roomId") { type = NavType.IntType },
+                navArgument("roomName") { type = NavType.StringType },
+            ),
+        ) { backStackEntry ->
+            val roomId = backStackEntry.arguments?.getInt("roomId") ?: return@composable
+            val encodedName = backStackEntry.arguments?.getString("roomName") ?: return@composable
+            val roomName = URLDecoder.decode(encodedName, Charsets.UTF_8.name())
+            val viewModel: RoomDetailViewModel = viewModel()
+            RoomDetailScreen(
+                roomId = roomId,
+                roomName = roomName,
                 onBack = { navController.popBackStack() },
                 viewModel = viewModel,
             )
