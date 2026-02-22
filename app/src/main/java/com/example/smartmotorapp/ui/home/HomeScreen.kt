@@ -12,9 +12,14 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddHome
 import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,6 +41,9 @@ fun HomeScreen(
     onDeviceClick: (String) -> Unit = {},
     onRoomClick: (Int, String) -> Unit = { _, _ -> },
     onAddDevice: () -> Unit = {},
+    onCreateRoom: () -> Unit = {},
+    onScheduleDevice: (String) -> Unit = {},
+    onScheduleRoom: (Int) -> Unit = {},
     onLogout: () -> Unit = {},
     viewModel: HomeViewModel = viewModel(),
 ) {
@@ -62,6 +70,9 @@ fun HomeScreen(
                 actions = {
                     IconButton(onClick = onAddDevice) {
                         Icon(Icons.Default.Add, contentDescription = "Add device")
+                    }
+                    IconButton(onClick = onCreateRoom) {
+                        Icon(Icons.Default.AddHome, contentDescription = "Create room")
                     }
                     Button(onClick = onLogout) { Text("Log out") }
                 },
@@ -144,6 +155,9 @@ fun HomeScreen(
                         RoomCard(
                             room = room,
                             onClick = { onRoomClick(room.id, room.name) },
+                            onTurnOn = { viewModel.setRoomOn(room.id) },
+                            onTurnOff = { viewModel.setRoomOff(room.id) },
+                            onSchedule = { onScheduleRoom(room.id) }
                         )
                     }
                     item {
@@ -159,6 +173,8 @@ fun HomeScreen(
                             turningId = uiState.turningId,
                             onTurnOn = { viewModel.setDeviceOn(device.id) },
                             onTurnOff = { viewModel.setDeviceOff(device.id) },
+                            onSchedule = { onScheduleDevice(device.id) },
+                            onDelete = { viewModel.removeDevice(device.id) },
                             onClick = { onDeviceClick(device.id) },
                         )
                     }
@@ -172,26 +188,58 @@ fun HomeScreen(
 private fun RoomCard(
     room: RoomDto,
     onClick: () -> Unit = {},
+    onTurnOn: () -> Unit = {},
+    onTurnOff: () -> Unit = {},
+    onSchedule: () -> Unit = {},
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        onClick = onClick,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
         ) {
-            Text(
-                text = room.name,
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Text(
-                text = "${room.deviceCount} devices",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp),
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { onClick() },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = room.name,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        text = "${room.deviceCount} devices",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+                Icon(
+                    imageVector = Icons.Default.MeetingRoom,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+            
+            Row(
+                modifier = Modifier.padding(top = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(onClick = onTurnOn) {
+                    Text("All ON")
+                }
+                Button(onClick = onTurnOff) {
+                    Text("All OFF")
+                }
+                OutlinedButton(onClick = onSchedule) {
+                    Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Schedule")
+                }
+            }
         }
     }
 }
@@ -202,6 +250,8 @@ private fun DeviceRow(
     turningId: String?,
     onTurnOn: () -> Unit,
     onTurnOff: () -> Unit,
+    onSchedule: () -> Unit,
+    onDelete: () -> Unit,
     onClick: () -> Unit,
 ) {
     val isPending = device.id == turningId
@@ -281,6 +331,9 @@ private fun DeviceRow(
                         },
                         modifier = Modifier.padding(start = 6.dp),
                     )
+                    IconButton(onClick = onDelete, modifier = Modifier.padding(start = 8.dp).size(24.dp)) {
+                        Icon(Icons.Default.Delete, contentDescription = "Remove Device", tint = MaterialTheme.colorScheme.error)
+                    }
                 }
             }
             Row(
@@ -338,6 +391,15 @@ private fun DeviceRow(
                     onClick = onTurnOff,
                     enabled = !isPending,
                 ) { Text("OFF") }
+                
+                OutlinedButton(
+                    onClick = onSchedule,
+                    enabled = !isPending,
+                ) {
+                    Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Schedule")
+                }
             }
         }
     }

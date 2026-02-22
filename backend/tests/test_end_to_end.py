@@ -175,7 +175,7 @@ class TestEndToEnd(unittest.TestCase):
         # Claim device
         claim_response = self.client.post(
             "/devices/claim",
-            json={"pair_code": "ABC123"},
+            json={"device_id": "test-device-1"},
             headers=headers
         )
         self.assertEqual(claim_response.status_code, 200)
@@ -322,12 +322,18 @@ class TestEndToEnd(unittest.TestCase):
         
         # Alexa discovery request
         alexa_request = {
-            "version": "3",
-            "session": {},
-            "context": {},
-            "request": {
-                "type": "Alexa.Discovery.Discover",
-                "messageId": "test-message-id"
+            "directive": {
+                "header": {
+                    "namespace": "Alexa.Discovery",
+                    "name": "Discover",
+                    "messageId": "test-message-id"
+                },
+                "payload": {
+                    "scope": {
+                        "type": "BearerToken",
+                        "token": token
+                    }
+                }
             }
         }
         
@@ -373,19 +379,20 @@ class TestEndToEnd(unittest.TestCase):
         
         # Alexa TurnOn request
         alexa_request = {
-            "version": "3",
-            "session": {},
-            "context": {},
-            "request": {
-                "type": "Alexa.PowerController",
+            "directive": {
+                "header": {
+                    "namespace": "Alexa.PowerController",
+                    "name": "TurnOn",
+                    "messageId": "test-message-id",
+                    "correlationToken": "test-token"
+                },
                 "endpoint": {
-                    "endpointId": "motor-1"
-                },
-                "directive": {
-                    "name": "TurnOn"
-                },
-                "messageId": "test-message-id",
-                "correlationToken": "test-token"
+                    "endpointId": "motor-1",
+                    "scope": {
+                        "type": "BearerToken",
+                        "token": token
+                    }
+                }
             }
         }
         
@@ -427,15 +434,20 @@ class TestEndToEnd(unittest.TestCase):
         db.close()
         
         alexa_request = {
-            "version": "3",
-            "session": {},
-            "context": {},
-            "request": {
-                "type": "Alexa.PowerController",
-                "endpoint": {"endpointId": "motor-1"},
-                "directive": {"name": "TurnOff"},
-                "messageId": "test-123",
-                "correlationToken": "test-token"
+            "directive": {
+                "header": {
+                    "namespace": "Alexa.PowerController",
+                    "name": "TurnOff",
+                    "messageId": "test-123",
+                    "correlationToken": "test-token"
+                },
+                "endpoint": {
+                    "endpointId": "motor-1",
+                    "scope": {
+                        "type": "BearerToken",
+                        "token": token
+                    }
+                }
             }
         }
         

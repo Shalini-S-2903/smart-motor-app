@@ -40,11 +40,13 @@ class Schedule(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     room_id = Column(Integer, ForeignKey("rooms.id", ondelete="CASCADE"), nullable=True, index=True)
     device_id = Column(String, ForeignKey("devices.id", ondelete="CASCADE"), nullable=True, index=True)
-    schedule_type = Column(String, nullable=False)  # "DAILY", "WEEKLY", "MONTHLY"
-    time_of_day = Column(String, nullable=False)  # HH:MM format
+    schedule_type = Column(String, nullable=False)  # "ONEOFF", "DAILY", "WEEKLY"
+    time_of_day = Column(String, nullable=False)  # HH:MM:SS format
+    scheduled_date = Column(String, nullable=True)  # YYYY-MM-DD for ONEOFF
     days_of_week = Column(String, nullable=True)  # Comma-separated days for WEEKLY
     action = Column(String, nullable=False)  # "ON", "OFF"
     is_active = Column(Boolean, default=True, nullable=False)
+    is_executed = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     last_run = Column(DateTime(timezone=True), nullable=True)
     

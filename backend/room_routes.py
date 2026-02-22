@@ -53,8 +53,9 @@ class ScheduleCreate(BaseModel):
     description: str | None = None
     room_id: int | None = None
     device_id: str | None = None
-    schedule_type: str  # DAILY, WEEKLY, MONTHLY
-    time_of_day: str  # HH:MM format
+    schedule_type: str  # ONEOFF, DAILY, WEEKLY
+    time_of_day: str  # HH:MM:SS format
+    scheduled_date: str | None = None  # YYYY-MM-DD
     days_of_week: str | None = None  # For WEEKLY: "MON,TUE,WED"
     action: str  # ON, OFF
 
@@ -67,9 +68,11 @@ class ScheduleResponse(BaseModel):
     device_id: str | None
     schedule_type: str
     time_of_day: str
+    scheduled_date: str | None
     days_of_week: str | None
     action: str
     is_active: bool
+    is_executed: bool
     created_at: datetime
     last_run: datetime | None
 
@@ -347,9 +350,11 @@ def get_schedules(
             device_id=s.device_id,
             schedule_type=s.schedule_type,
             time_of_day=s.time_of_day,
+            scheduled_date=s.scheduled_date,
             days_of_week=s.days_of_week,
             action=s.action,
             is_active=s.is_active,
+            is_executed=s.is_executed,
             created_at=s.created_at,
             last_run=s.last_run
         )
@@ -379,22 +384,26 @@ def create_schedule(
             raise HTTPException(status_code=404, detail="Device not found or not owned")
     
     # Validate schedule type and time format
-    if schedule_data.schedule_type not in ["DAILY", "WEEKLY", "MONTHLY"]:
+    if schedule_data.schedule_type not in ["ONEOFF", "DAILY", "WEEKLY"]:
         raise HTTPException(status_code=400, detail="Invalid schedule type")
     
     if schedule_data.action not in ["ON", "OFF"]:
         raise HTTPException(status_code=400, detail="Invalid action")
     
-    # Basic time format validation (HH:MM)
+    # Basic time format validation (HH:MM:SS or HH:MM)
     try:
-        time_parts = schedule_data.time_of_day.split(":")
-        if len(time_parts) != 2:
+        parts = schedule_data.time_of_day.split(":")
+        if len(parts) == 2:
+            schedule_data.time_of_day += ":00" # Add seconds if missing
+            parts = schedule_data.time_of_day.split(":")
+            
+        if len(parts) != 3:
             raise ValueError()
-        hour, minute = int(time_parts[0]), int(time_parts[1])
-        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        h, m, s = int(parts[0]), int(parts[1]), int(parts[2])
+        if not (0 <= h <= 23 and 0 <= m <= 59 and 0 <= s <= 59):
             raise ValueError()
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid time format. Use HH:MM")
+        raise HTTPException(status_code=400, detail="Invalid time format. Use HH:MM or HH:MM:SS")
     
     schedule = Schedule(
         name=schedule_data.name,
@@ -404,6 +413,7 @@ def create_schedule(
         device_id=schedule_data.device_id,
         schedule_type=schedule_data.schedule_type,
         time_of_day=schedule_data.time_of_day,
+        scheduled_date=schedule_data.scheduled_date,
         days_of_week=schedule_data.days_of_week,
         action=schedule_data.action
     )
@@ -420,9 +430,11 @@ def create_schedule(
         device_id=schedule.device_id,
         schedule_type=schedule.schedule_type,
         time_of_day=schedule.time_of_day,
+        scheduled_date=schedule.scheduled_date,
         days_of_week=schedule.days_of_week,
         action=schedule.action,
         is_active=schedule.is_active,
+        is_executed=schedule.is_executed,
         created_at=schedule.created_at,
         last_run=schedule.last_run
     )

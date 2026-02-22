@@ -3,9 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
 }
 
-kotlin {
-    jvmToolchain(17)
-}
+
 
 android {
     namespace = "com.example.smartmotorapp"
@@ -26,7 +24,7 @@ android {
             buildConfigField(
                 "String",
                 "BASE_URL",
-                "\"http://10.0.2.2:8000/\"",
+                "\"https://cyan-moles-switch.loca.lt/\"",
             )
         }
         release {
@@ -47,6 +45,11 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
     }
 
     buildFeatures {
@@ -55,7 +58,7 @@ android {
     }
 
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.10"
+        kotlinCompilerExtensionVersion = "1.5.14"
     }
 
     packaging {
@@ -87,6 +90,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
     implementation(libs.androidx.security.crypto)
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

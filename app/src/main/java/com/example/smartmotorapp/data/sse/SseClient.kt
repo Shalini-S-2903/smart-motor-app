@@ -54,6 +54,7 @@ class SseClient(
     private fun connectAndRead() {
         val url = "${BackendConfig.baseUrl}/events"
         val builder = Request.Builder().url(url).get()
+        builder.addHeader("bypass-tunnel-reminder", "true")
         tokenProvider?.invoke()?.let { token ->
             if (token.isNotBlank()) builder.addHeader("Authorization", "Bearer $token")
         }

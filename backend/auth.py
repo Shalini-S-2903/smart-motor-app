@@ -9,7 +9,8 @@ import os
 from datetime import datetime, timezone, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Form, Query
+from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -60,6 +61,13 @@ class ClaimRequest(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str
+
+
+# ---------------------------------------------------------------------------
+# Alexa OAuth2 simple store (in-memory for development)
+# ---------------------------------------------------------------------------
+# code -> {user_id, client_id, redirect_uri, expires_at}
+auth_codes: dict[str, dict] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -237,3 +245,119 @@ def refresh(body: RefreshRequest, db: Annotated[Session, Depends(get_db)]):
         refresh_token=new_refresh,
         expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
+
+
+# ---------------------------------------------------------------------------
+# Alexa OAuth2 Endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/authorize", response_class=HTMLResponse)
+def authorize_page(
+    response_type: str = Query(...),
+    client_id: str = Query(...),
+    redirect_uri: str = Query(...),
+    state: str = Query(...),
+):
+    """Serve a simple login page for Alexa Account Linking."""
+    # In production, check client_id and redirect_uri against whitelist
+    
+    html_content = f"""
+    <html>
+        <head>
+            <title>SmartMotor Login</title>
+            <style>
+                body {{ font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background: #f0f2f5; }}
+                .card {{ background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 300px; }}
+                h2 {{ margin-top: 0; }}
+                input {{ width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }}
+                button {{ width: 100%; padding: 10px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }}
+                button:hover {{ background: #0056b3; }}
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <h2>Alexa Linking</h2>
+                <form action="/auth/authorize" method="post">
+                    <input type="hidden" name="state" value="{state}">
+                    <input type="hidden" name="redirect_uri" value="{redirect_uri}">
+                    <input type="email" name="email" placeholder="Email" required>
+                    <input type="password" name="password" placeholder="Password" required>
+                    <button type="submit">Link Account</button>
+                </form>
+            </div>
+        </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
+
+
+@router.post("/authorize")
+def handle_authorize(
+    email: str = Form(...),
+    password: str = Form(...),
+    state: str = Form(...),
+    redirect_uri: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Handle login and redirect back to Alexa with auth code."""
+    user = db.query(User).filter(User.email == email).first()
+    if not user or not verify_password(password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    # Generate auth code
+    import uuid
+    code = str(uuid.uuid4())
+    auth_codes[code] = {
+        "user_id": user.id,
+        "expires_at": time.time() + 600 # 10 minutes
+    }
+    
+    # Redirect back to Alexa
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(
+        url=f"{redirect_uri}?code={code}&state={state}",
+        status_code=303
+    )
+
+
+@router.post("/token")
+def handle_token(
+    grant_type: str = Form(...),
+    code: str = Form(None),
+    refresh_token: str = Form(None),
+    client_id: str = Form(...),
+    client_secret: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Exchange auth code or refresh token for Bearer token."""
+    # In production, verify client_id and client_secret
+    
+    if grant_type == "authorization_code":
+        stored = auth_codes.pop(code, None)
+        if not stored or stored["expires_at"] < time.time():
+            raise HTTPException(status_code=400, detail="Invalid or expired code")
+        
+        user = db.get(User, stored["user_id"])
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+            
+    elif grant_type == "refresh_token":
+        payload = decode_token(refresh_token)
+        if not payload or payload.get("type") != "refresh":
+            raise HTTPException(status_code=401, detail="Invalid refresh token")
+        user_id = int(payload["sub"])
+        user = db.get(User, user_id)
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported grant type")
+        
+    access = create_access_token(user.id, user.email)
+    new_refresh = create_refresh_token(user.id, user.email)
+    
+    return {
+        "access_token": access,
+        "refresh_token": new_refresh,
+        "token_type": "bearer",
+        "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    }

@@ -53,6 +53,9 @@ interface BackendApi {
     @POST("devices/claim")
     suspend fun claimDevice(@Body body: ClaimRequestDto): Response<ClaimResponseDto>
 
+    @DELETE("devices/{deviceId}")
+    suspend fun removeDevice(@Path("deviceId") deviceId: String): Response<Unit>
+
     @POST("devices/{deviceId}/command")
     suspend fun sendCommand(
         @Path("deviceId") deviceId: String,
@@ -63,6 +66,9 @@ interface BackendApi {
     suspend fun getCommandStatus(
         @Path("commandId") commandId: String,
     ): Response<CommandStatusDto>
+
+    @GET("activities")
+    suspend fun getActivities(): Response<List<ActivityDto>>
 }
 
 data class ClaimResponseDto(

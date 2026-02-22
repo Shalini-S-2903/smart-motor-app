@@ -45,14 +45,13 @@ class MotorMonitor:
         self._thread: Optional[threading.Thread] = None
 
     def on_state_power(self, device_id: str, state: Optional[str], power: Optional[float], now_ts: float) -> None:
-        """Call from MQTT when state or power is updated. Keeps logic fast for MQTT thread."""
+        """Call from MQTT when state or power is updated."""
         with self._lock:
             d = self._devices.setdefault(device_id, {
                 "last_state": None,
                 "running_since": None,
                 "power_samples": deque(maxlen=120),
             })
-            prev_state = d["last_state"]
             if state is not None:
                 state_upper = state.strip().upper() if isinstance(state, str) else None
                 d["last_state"] = state_upper
@@ -91,15 +90,15 @@ class MotorMonitor:
     def _check_rules(self) -> None:
         now = time.time()
         with self._lock:
-            devices_snapshot = {
-                did: {
+            snapshot = {
+                device_id: {
                     "last_state": d["last_state"],
                     "running_since": d["running_since"],
                     "power_samples": list(d["power_samples"]),
                 }
-                for did, d in self._devices.items()
+                for device_id, d in self._devices.items()
             }
-        for device_id, data in devices_snapshot.items():
+        for device_id, data in snapshot.items():
             if data["last_state"] != "ON":
                 continue
             running_since = data["running_since"]
@@ -109,7 +108,8 @@ class MotorMonitor:
 
             reason = self._eval_dry_run(now, power_samples)
             if reason:
-                self._trigger_off(device_id, reason, now)
+                # self._trigger_off(device_id, reason, now)  # Disabled for initial desk testing
+                self._insert_event(device_id, reason)      # Just log it
                 self._clear_running_since(device_id)
                 continue
 

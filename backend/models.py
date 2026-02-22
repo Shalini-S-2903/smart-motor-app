@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, String, DateTime, Integer, Float, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, String, DateTime, Integer, Float, ForeignKey, UniqueConstraint, Boolean
 
 from db import Base
 
@@ -23,8 +23,13 @@ class Device(Base):
 
     id = Column(String, primary_key=True, index=True)
     first_seen = Column(DateTime(timezone=True), default=utcnow, nullable=False)
-    fill_mode = Column(String, nullable=True)  # "1" / true-like for SMART_FILL
-    max_runtime_minutes = Column(Integer, nullable=True)  # default 20 in code
+    image_url = Column(String, nullable=True)  # Store image URL if needed
+    is_paired = Column(Integer, default=0, nullable=False)
+    # Motor safety config (moved from per-channel to per-device)
+    max_runtime_minutes = Column(Integer, default=20, nullable=False)
+    fill_mode = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
 
 
 class DeviceEvent(Base):

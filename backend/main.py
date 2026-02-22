@@ -30,6 +30,7 @@ from models import User, Device, DeviceOwnership, DevicePairingSession, DeviceEv
 from room_models import Room, RoomDevice, Schedule
 from room_routes import router as room_routes
 from alexa_routes import router as alexa_routes
+from scheduler_service import SchedulerService
 
 # ---------------------------------------------------------------------------
 # Device event reason -> human-readable message (never expose raw reason to frontend)
@@ -98,6 +99,9 @@ async def lifespan(app: FastAPI):
     app.state.sse_event_queue = event_queue
 
     def emit_device_event(device_id: str, reason: str, when: datetime) -> None:
+        if reason == "DRY_RUN":
+            return # Skip dry run alerts in activity log during testing
+            
         message = _device_event_message(reason)
         ts_iso = when.isoformat() if when.tzinfo else when.replace(tzinfo=timezone.utc).isoformat()
         payload = {
@@ -125,6 +129,11 @@ async def lifespan(app: FastAPI):
     app.state.motor_monitor = motor_monitor
     logger.info("MotorMonitor started")
 
+    scheduler = SchedulerService(mqtt)
+    scheduler.start()
+    app.state.scheduler = scheduler
+    logger.info("SchedulerService started")
+
     yield
 
     broadcast_task.cancel()
@@ -132,6 +141,10 @@ async def lifespan(app: FastAPI):
         await broadcast_task
     except asyncio.CancelledError:
         pass
+
+    if hasattr(app.state, "scheduler"):
+        await app.state.scheduler.stop()
+    
     motor_monitor.stop()
     logger.info("MotorMonitor stopped")
     mqtt.stop()
@@ -172,9 +185,13 @@ class DeviceState(BaseModel):
     last_power: float | None = None
 
 
+
+
+
 class DevicesResponse(BaseModel):
     devices: list[DeviceState]
-
+class ClaimRequest(BaseModel):
+    device_id: str
 
 class DeviceEventItem(BaseModel):
     timestamp: datetime
@@ -183,7 +200,7 @@ class DeviceEventItem(BaseModel):
 
 
 class CommandRequest(BaseModel):
-    action: str  # "ON" | "OFF" (simple validation below)
+    action: str  # "ON" | "OFF"
 
 
 class CommandStatus(BaseModel):
@@ -202,6 +219,14 @@ class SimulateStateRequest(BaseModel):
 
 class SimulateAckRequest(BaseModel):
     command_id: str
+
+
+class ActivityItem(BaseModel):
+    id: int
+    activity_type: str
+    device_id: str | None = None
+    timestamp: datetime
+    details: str | None = None
 # ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
@@ -262,35 +287,56 @@ def claim_device(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    now = datetime.now(tz=timezone.utc)
-    session = (
-        db.query(DevicePairingSession)
-        .filter(
-            DevicePairingSession.pair_code == body.pair_code.strip(),
-            DevicePairingSession.expires_at > now,
-        )
-        .first()
-    )
-    if not session:
-        raise HTTPException(status_code=400, detail="Invalid or expired code")
-    device_id = session.device_id
+    device_id = body.device_id.strip()
+    if not device_id:
+        raise HTTPException(status_code=400, detail="device_id is required")
+
+    # 1) Check if device exists, if not create it (auto-provision on first claim)
     device = db.get(Device, device_id)
     if not device:
-        db.add(Device(id=device_id))
-    existing = (
-        db.query(DeviceOwnership)
-        .filter(DeviceOwnership.user_id == current_user.id, DeviceOwnership.device_id == device_id)
-        .first()
-    )
-    if existing:
-        db.delete(session)
+        device = Device(id=device_id)
+        db.add(device)
         db.commit()
-        return {"status": "already_claimed", "device_id": device_id}
-    session.claimed_by_user_id = current_user.id
+        db.refresh(device)
+
+    # 2) Check if anyone else owns it (simple single-owner model for now)
+    # If the user already owns it, that's fine (idempotent)
+    owner = db.query(DeviceOwnership).filter(DeviceOwnership.device_id == device_id).first()
+    if owner:
+        if owner.user_id == current_user.id:
+            return {"status": "already_claimed", "device_id": device_id}
+        else:
+            raise HTTPException(status_code=403, detail="Device is already claimed by another user")
+
+    # 3) Assign ownership
     db.add(DeviceOwnership(user_id=current_user.id, device_id=device_id, role="owner"))
-    db.delete(session)
     db.commit()
+    
     return {"status": "claimed", "device_id": device_id}
+
+@app.delete("/devices/{device_id}")
+def delete_device(
+    device_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    owner = db.query(DeviceOwnership).filter(
+        DeviceOwnership.device_id == device_id,
+        DeviceOwnership.user_id == current_user.id
+    ).first()
+    if not owner:
+        raise HTTPException(status_code=404, detail="Device not found or not owned by user")
+    
+    # Delete the ownership record
+    db.delete(owner)
+    
+    # Also delete the device entirely for clean up
+    device = db.get(Device, device_id)
+    if device:
+        db.delete(device)
+        
+    db.commit()
+    return {"status": "success", "message": f"Device {device_id} removed"}
 
 
 @app.get("/devices/{device_id}", response_model=DeviceState)
@@ -340,17 +386,6 @@ def device_on(
     db: Annotated[Session, Depends(get_db)],
 ):
     _require_device_ownership(db, current_user.id, device_id)
-    
-    # Track device ON activity
-    activity = UserActivity(
-        user_id=current_user.id,
-        activity_type="DEVICE_ON",
-        device_id=device_id,
-        details=f"Turned ON device {device_id}"
-    )
-    db.add(activity)
-    db.commit()
-    
     return send_command(device_id, CommandRequest(action="ON"), current_user, db)
 
 
@@ -361,18 +396,10 @@ def device_off(
     db: Annotated[Session, Depends(get_db)],
 ):
     _require_device_ownership(db, current_user.id, device_id)
-    
-    # Track device OFF activity
-    activity = UserActivity(
-        user_id=current_user.id,
-        activity_type="DEVICE_OFF",
-        device_id=device_id,
-        details=f"Turned OFF device {device_id}"
-    )
-    db.add(activity)
-    db.commit()
-    
     return send_command(device_id, CommandRequest(action="OFF"), current_user, db)
+
+
+
 
 
 @app.post("/devices/{device_id}/unlock")
@@ -418,7 +445,43 @@ def send_command(
     svc: MQTTService = app.state.mqtt
     cmd_id = svc.create_command(device_id, action)
     info = svc.get_command(cmd_id)
+    
+    # Track activity
+    activity = UserActivity(
+        user_id=current_user.id,
+        activity_type=f"DEVICE_{action}",
+        device_id=device_id,
+        details=f"Turned {action} on device {device_id}"
+    )
+    db.add(activity)
+    db.commit()
+    
     return _build_command_status(cmd_id, info)
+
+
+@app.get("/activities", response_model=list[ActivityItem])
+def get_activities(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Fetch the latest 50 activities for the authenticated user."""
+    rows = (
+        db.query(UserActivity)
+        .filter(UserActivity.user_id == current_user.id)
+        .order_by(UserActivity.timestamp.desc())
+        .limit(50)
+        .all()
+    )
+    return [
+        ActivityItem(
+            id=r.id,
+            activity_type=r.activity_type,
+            device_id=r.device_id,
+            timestamp=r.timestamp,
+            details=r.details,
+        )
+        for r in rows
+    ]
 
 
 @app.get("/commands/{command_id}", response_model=CommandStatus)
@@ -522,7 +585,9 @@ async def device_events_stream(
                 except asyncio.TimeoutError:
                     yield ": heartbeat\n\n"
                     continue
-                if payload.get("device_id") == device_id or payload.get("device", {}).get("id") == device_id:
+                # For single-device stream, we can simplify even more
+                msg_device_id = payload.get("device_id") or payload.get("device", {}).get("id")
+                if msg_device_id == device_id:
                     if "sse_event" in payload:
                         event_type = payload["sse_event"]
                         data_payload = {k: v for k, v in payload.items() if k != "sse_event"}

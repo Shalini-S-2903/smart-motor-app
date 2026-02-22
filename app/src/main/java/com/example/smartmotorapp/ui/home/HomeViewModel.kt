@@ -13,6 +13,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -90,7 +91,7 @@ class HomeViewModel : ViewModel() {
                 val healthRes = api.health()
                 if (!healthRes.isSuccessful) throw Exception(backendOfflineMessage)
                 val health = healthRes.body() ?: throw Exception(backendOfflineMessage)
-                if (health.status != "ok" || !health.mqttConnected) throw Exception(backendOfflineMessage)
+                if (health.status != "ok") throw Exception(backendOfflineMessage)
             }.fold(
                 onSuccess = {
                     loadRooms()
@@ -143,21 +144,61 @@ class HomeViewModel : ViewModel() {
     fun setDeviceOn(deviceId: String) = sendCommand(deviceId, "ON")
     fun setDeviceOff(deviceId: String) = sendCommand(deviceId, "OFF")
 
+    fun setRoomOn(roomId: Int) = sendRoomCommand(roomId, "ON")
+    fun setRoomOff(roomId: Int) = sendRoomCommand(roomId, "OFF")
+
+    private fun sendRoomCommand(roomId: Int, action: String) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isRefreshing = true) }
+            runCatching {
+                api.controlRoom(roomId, mapOf("action" to action))
+            }.onSuccess {
+                // Refresh to show new states
+                delay(2000) // Give it a moment to process
+                loadDevices(initial = false)
+            }.onFailure {
+                _uiState.update { it.copy(isRefreshing = false, snackbarMessage = "Failed to send room command") }
+            }
+        }
+    }
+
     private fun sendCommand(deviceId: String, action: String) {
         viewModelScope.launch {
+            val oldState = _uiState.value.devices[deviceId]
+            
             withContext(Dispatchers.Main) {
-                _uiState.value = _uiState.value.copy(turningId = deviceId)
+                // Optimistic update: Toggle state locally immediately
+                _uiState.update { current ->
+                    val updatedDevices = current.devices.toMutableMap()
+                    val device = updatedDevices[deviceId]
+                    if (device != null) {
+                        updatedDevices[deviceId] = device.copy(lastState = action)
+                    }
+                    current.copy(
+                        devices = updatedDevices,
+                        turningId = deviceId,
+                        errorMessage = null
+                    )
+                }
             }
 
             commandTimeoutJob?.cancel()
             commandTimeoutJob = viewModelScope.launch {
-                delay(15_000)
+                delay(15_000) // Reduced timeout for better feel
                 withContext(Dispatchers.Main) {
                     if (_uiState.value.turningId == deviceId) {
-                        _uiState.value = _uiState.value.copy(
-                            turningId = null,
-                            snackbarMessage = "Device did not respond",
-                        )
+                        // Revert on timeout
+                        _uiState.update { current ->
+                            val revertedDevices = current.devices.toMutableMap()
+                            if (oldState != null) {
+                                revertedDevices[deviceId] = oldState
+                            }
+                            current.copy(
+                                devices = revertedDevices,
+                                turningId = null,
+                                snackbarMessage = "Device did not respond",
+                            )
+                        }
                     }
                 }
             }
@@ -168,11 +209,33 @@ class HomeViewModel : ViewModel() {
             }.onFailure {
                 commandTimeoutJob?.cancel()
                 withContext(Dispatchers.Main) {
-                    _uiState.value = _uiState.value.copy(
-                        turningId = null,
-                        snackbarMessage = "Network error while sending command",
-                    )
+                    // Revert on failure
+                    _uiState.update { current ->
+                        val revertedDevices = current.devices.toMutableMap()
+                        if (oldState != null) {
+                            revertedDevices[deviceId] = oldState
+                        }
+                        current.copy(
+                            devices = revertedDevices,
+                            turningId = null,
+                            snackbarMessage = "Network error while sending command",
+                        )
+                    }
                 }
+            }
+        }
+    }
+
+    fun removeDevice(deviceId: String) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isRefreshing = true) }
+            runCatching {
+                api.removeDevice(deviceId)
+            }.onSuccess {
+                _uiState.update { it.copy(snackbarMessage = "Device removed") }
+                loadDevices(initial = false)
+            }.onFailure {
+                _uiState.update { it.copy(isRefreshing = false, snackbarMessage = "Failed to remove device") }
             }
         }
     }

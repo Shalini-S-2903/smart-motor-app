@@ -51,7 +51,7 @@ class TestMQTTService(unittest.TestCase):
         # Verify MQTT publish was called
         self.service.client.publish.assert_called_once()
         call_args = self.service.client.publish.call_args
-        self.assertEqual(call_args[0][0], f"/devices/{device_id}/command")
+        self.assertEqual(call_args[0][0], f"devices/{device_id}/command")
         
         # Verify payload
         payload = json.loads(call_args[0][1])

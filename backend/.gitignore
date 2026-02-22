@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+smartmotor.db
+*.log
+localtunnel.log
+uvicorn.log
+*.pyc

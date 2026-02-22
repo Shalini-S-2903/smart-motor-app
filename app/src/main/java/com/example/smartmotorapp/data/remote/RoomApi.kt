@@ -41,13 +41,13 @@ interface RoomApi {
     suspend fun getSchedules(): retrofit2.Response<List<ScheduleDto>>
 
     @POST("/rooms/schedules")
-    suspend fun createSchedule(@Body schedule: ScheduleCreateDto): retrofit2.Response<ScheduleDto>
+    suspend fun createSchedule(@Body schedule: ScheduleCreateDto): retrofit2.Response<ScheduleResponseDto>
 
     @PUT("/rooms/schedules/{scheduleId}")
     suspend fun updateSchedule(
         @Path("scheduleId") scheduleId: Int,
         @Body schedule: ScheduleCreateDto
-    ): retrofit2.Response<ScheduleDto>
+    ): retrofit2.Response<Unit>
 
     @DELETE("/rooms/schedules/{scheduleId}")
     suspend fun deleteSchedule(@Path("scheduleId") scheduleId: Int): retrofit2.Response<Unit>
@@ -82,8 +82,15 @@ data class ScheduleDto(
     val daysOfWeek: String?,
     val action: String,
     val isActive: Boolean,
+    @SerializedName("is_executed") val isExecuted: Boolean,
     val createdAt: String,
-    val lastRun: String?
+    val lastRun: String?,
+    @SerializedName("scheduled_date") val scheduledDate: String?
+)
+
+data class ScheduleResponseDto(
+    val id: Int,
+    val name: String
 )
 
 data class ScheduleCreateDto(
@@ -94,5 +101,6 @@ data class ScheduleCreateDto(
     val scheduleType: String,
     val timeOfDay: String,
     val daysOfWeek: String? = null,
+    @SerializedName("scheduled_date") val scheduledDate: String? = null,
     val action: String
 )

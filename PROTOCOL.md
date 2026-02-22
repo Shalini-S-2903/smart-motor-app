@@ -62,7 +62,23 @@ The ESP32 **publishes** to these topics. The backend **subscribes** and updates 
 
 ---
 
-### 4. Command ACK
+### 4. Pairing Code
+
+| Field    | Value |
+| -------- | ----- |
+| **Topic** | `/devices/{device_id}/pairing` |
+| **Payload** | Plain string: 6-digit code (e.g. `"123456"`). |
+| **When** | On startup and periodically (e.g. every 60s) until the device is claimed. |
+| **Purpose** | Used by the user in the mobile app to claim ownership of the device. |
+
+**Example**
+
+- Topic: `/devices/motor-1/pairing`
+- Payload: `827391`
+
+---
+
+### 5. Command ACK
 
 | Field    | Value |
 | -------- | ----- |
@@ -132,8 +148,9 @@ The backend **publishes** to the command topic. The ESP32 **subscribes** and exe
 **Summary for firmware**
 
 1. Publish heartbeat every 10 s.
-2. Publish state when state changes; publish power when you have a new reading.
-3. Subscribe to `/devices/{device_id}/command`; on each message, parse JSON, run the action, then publish to `/devices/{device_id}/ack` with the same `command_id` and `"status":"SUCCESS"` within 10 s.
+2. Publish pairing code on start and every 60 s.
+3. Publish state when state changes; publish power when you have a new reading.
+4. Subscribe to `/devices/{device_id}/command`; on each message, parse JSON, run the action, then publish to `/devices/{device_id}/ack` with the same `command_id` and `"status":"SUCCESS"` within 10 s.
 
 ---
 

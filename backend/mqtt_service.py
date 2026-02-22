@@ -23,6 +23,7 @@ def _device_update_payload(device_id: str, state: Dict[str, Any], now_ts: float)
         datetime.fromtimestamp(ts, tz=timezone.utc).isoformat() if ts else None
     )
     online = (now_ts - ts) <= 30.0 if ts else False
+    
     return {
         "type": "device_update",
         "device": {
@@ -150,13 +151,16 @@ class MQTTService:
         self.is_connected = rc == 0
         if rc == 0:
             logger.info("MQTT connected")
-            # subscribe to wildcard topics
-            client.subscribe("/devices/+/state")
-            client.subscribe("/devices/+/power")
-            client.subscribe("/devices/+/heartbeat")
-            client.subscribe("/devices/+/ack")
-            client.subscribe("/devices/+/pairing")
-            
+            # subscribe to wildcard topics without leading slash
+            client.subscribe("devices/+/state", qos=1)
+            client.subscribe("devices/+/power", qos=1)
+            client.subscribe("devices/+/heartbeat", qos=1)
+            client.subscribe("devices/+/ack", qos=1)
+            # Support legacy topics with leading slash just in case
+            client.subscribe("/devices/+/state", qos=1)
+            client.subscribe("/devices/+/power", qos=1)
+            client.subscribe("/devices/+/heartbeat", qos=1)
+            client.subscribe("/devices/+/ack", qos=1)
 
         else:
             logger.error("MQTT connection failed rc=%s", rc)
@@ -170,19 +174,19 @@ class MQTTService:
         payload = msg.payload.decode("utf-8") if msg.payload else ""
         logger.info("MQTT message topic=%s payload=%s", topic, payload)
 
-        # Topic format: /devices/{deviceId}/suffix
-        parts = topic.split("/")
-        if len(parts) < 4 or parts[1] != "devices":
+        # topic could be "/devices/id/state" or "devices/id/state"
+        clean_topic = topic.lstrip("/")
+        parts = clean_topic.split("/")
+        if len(parts) < 3 or parts[0] != "devices":
             return
-        device_id = parts[2]
-        suffix = parts[3]
+        device_id = parts[1]
+        suffix = parts[2]
 
         now = time.time()
         motor_state = None
         motor_power = None
         with self._lock:
             state = self._states.setdefault(device_id, {})
-            # heartbeat always updates last_seen
             if suffix == "heartbeat":
                 state["last_seen_ts"] = now
                 self._ensure_device_persisted(device_id)
@@ -192,7 +196,7 @@ class MQTTService:
                 state["last_state"] = payload
                 motor_state = payload
                 motor_power = state.get("last_power")
-                self._insert_state_history(device_id, state_value=payload, power_value=state.get("last_power"))
+                self._insert_state_history(device_id, state_value=payload, power_value=motor_power)
             elif suffix == "power":
                 try:
                     power_val = float(payload)
@@ -200,15 +204,14 @@ class MQTTService:
                 except ValueError:
                     power_val = None
                     state["last_power"] = None
+                
                 motor_state = state.get("last_state")
-                motor_power = power_val if state.get("last_power") is not None else None
-                self._insert_state_history(device_id, state_value=state.get("last_state"), power_value=power_val)
+                motor_power = power_val
+                self._insert_state_history(device_id, state_value=motor_state, power_value=power_val)
             elif suffix == "ack":
-                # Example payload: {"command_id": "...", "status": "SUCCESS"}
                 try:
                     data = json.loads(payload)
                 except json.JSONDecodeError:
-                    logger.warning("Invalid ACK payload JSON: %s", payload)
                     return
                 cmd_id = data.get("command_id")
                 if not cmd_id:
@@ -218,7 +221,11 @@ class MQTTService:
                     cmd["status"] = "SUCCESS"
                     cmd["updated_at_ts"] = now
                     self._update_command_status(cmd_id, "SUCCESS", now)
-        # Push to SSE without holding lock; do not block MQTT thread
+                    
+                    action = cmd.get("action")
+                    if action in {"ON", "OFF"}:
+                        state["last_state"] = action
+
         self._emit_device_update(device_id)
         if self._motor_monitor is not None and (motor_state is not None or motor_power is not None):
             self._motor_monitor.on_state_power(device_id, motor_state, motor_power, now)
@@ -384,12 +391,12 @@ class MQTTService:
         self._ensure_device_persisted(device_id)
         self._insert_command(cmd_id, device_id, action, created_ts=now)
 
-        topic = f"/devices/{device_id}/command"
-        payload = json.dumps(
-            {"command_id": cmd_id, "action": action}, separators=(",", ":")
-        )
+        # Standardized topic without leading slash
+        topic = f"devices/{device_id}/command"
+        payload_data = {"command_id": cmd_id, "action": action}
+        payload = json.dumps(payload_data, separators=(",", ":"))
         logger.info("Publishing MQTT command topic=%s payload=%s", topic, payload)
-        self.client.publish(topic, payload, qos=0, retain=False)
+        self.client.publish(topic, payload, qos=1, retain=False)
         return cmd_id
 
     def get_command(self, command_id: str) -> Dict[str, Any] | None:
@@ -413,7 +420,6 @@ class MQTTService:
     def simulate_state(self, device_id: str, state_value: str | None, power_value: float | None) -> None:
         """
         Simulate state + power update as if /state and /power MQTT messages arrived.
-        Updates in-memory state and inserts a DeviceStateHistory row.
         """
         now = time.time()
         with self._lock:
@@ -424,6 +430,7 @@ class MQTTService:
                 state["last_power"] = power_value
             else:
                 state["last_power"] = None
+                    
         self._ensure_device_persisted(device_id)
         self._insert_state_history(device_id, state_value=state_value, power_value=power_value)
         self._emit_device_update(device_id)

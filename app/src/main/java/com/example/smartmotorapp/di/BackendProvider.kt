@@ -34,6 +34,13 @@ object BackendProvider {
     private val baseUrl: String
         get() = BackendConfig.baseUrl.ifEmpty { "http://10.0.2.2:8000" }
 
+    private val localtunnelInterceptor = okhttp3.Interceptor { chain ->
+        val request = chain.request().newBuilder()
+            .addHeader("bypass-tunnel-reminder", "true")
+            .build()
+        chain.proceed(request)
+    }
+
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
         level = HttpLoggingInterceptor.Level.BODY
     }
@@ -74,6 +81,7 @@ object BackendProvider {
             .connectTimeout(timeouts.first, timeouts.second)
             .readTimeout(timeouts.first, timeouts.second)
             .writeTimeout(timeouts.first, timeouts.second)
+            .addInterceptor(localtunnelInterceptor)
             .addInterceptor(loggingInterceptor)
             .build()
 
@@ -90,6 +98,7 @@ object BackendProvider {
             .connectTimeout(timeouts.first, timeouts.second)
             .readTimeout(timeouts.first, timeouts.second)
             .writeTimeout(timeouts.first, timeouts.second)
+            .addInterceptor(localtunnelInterceptor)
             .addInterceptor(AuthInterceptor(store, authApi))
             .addInterceptor(loggingInterceptor)
             .build()
