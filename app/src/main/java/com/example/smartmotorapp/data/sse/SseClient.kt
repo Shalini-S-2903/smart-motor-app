@@ -88,6 +88,7 @@ class SseClient(
                                         lastSeen = device.str("last_seen"),
                                         lastState = device.str("last_state"),
                                         lastPower = device.dbl("last_power"),
+                                        description = device.str("description") ?: return@runCatching
                                     )
                                     listener(dto)
                                 }

@@ -6,6 +6,7 @@ Uses python-jose for JWT and passlib bcrypt for password hashing.
 import hashlib
 import logging
 import os
+import bcrypt
 from datetime import datetime, timezone, timedelta
 from typing import Annotated
 
@@ -80,11 +81,17 @@ def _normalize_password(password: str) -> str:
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(_normalize_password(password))
-
+    # 1. Normalize to 64-char hex string
+    normalized = _normalize_password(password)
+    # 2. Hash directly with bcrypt (bypassing the broken pwd_context)
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(normalized.encode('utf-8'), salt)
+    return hashed.decode('utf-8')
 
 def verify_password(password: str, hashed: str) -> bool:
-    return pwd_context.verify(_normalize_password(password), hashed)
+    # Verify directly with bcrypt
+    normalized = _normalize_password(password)
+    return bcrypt.checkpw(normalized.encode('utf-8'), hashed.encode('utf-8'))
 
 
 # ---------------------------------------------------------------------------

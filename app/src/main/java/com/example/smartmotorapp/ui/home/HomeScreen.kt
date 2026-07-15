@@ -1,5 +1,6 @@
 package com.example.smartmotorapp.ui.home
 
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -7,33 +8,137 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.TrendingUp
 import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddHome
 import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.filled.OfflineBolt
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.SettingsInputComponent
+import androidx.compose.material.icons.outlined.LightMode
+import androidx.compose.material.icons.outlined.Lightbulb
+import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.CalendarToday
+import androidx.compose.material.icons.rounded.Group
+import androidx.compose.material.icons.rounded.Light
+import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.rounded.Lightbulb
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.PaintingStyle.Companion.Stroke
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.smartmotorapp.R
 import com.example.smartmotorapp.data.remote.DeviceDto
 import com.example.smartmotorapp.data.remote.RoomDto
+import com.example.smartmotorapp.ui.components.DeviceCardHome
+import com.example.smartmotorapp.ui.components.RoomCardHome
+import com.example.smartmotorapp.ui.theme.AppBackground
+import com.example.smartmotorapp.ui.theme.AppSubtitleText
+import com.example.smartmotorapp.ui.theme.AppTitleText
+import com.example.smartmotorapp.ui.theme.TextPrimary
+import com.example.smartmotorapp.ui.theme.White
+import com.example.smartmotorapp.ui.theme.cobaltBlue
 import kotlinx.coroutines.delay
+import kotlin.math.cos
+import kotlin.math.sin
 
 private const val POWER_MAX_W = 1000
+
+val MockRooms = listOf(
+    RoomDto(
+        id = 1,
+        name = "Main Pump House",
+        description = "Primary water supply motor",
+        createdAt = "2024-03-20T10:00:00Z",
+        isActive = true,
+        deviceCount = 2
+    ),
+    RoomDto(
+        id = 2,
+        name = "Guest Wing",
+        description = "Auxiliary supply",
+        createdAt = "2024-03-21T11:00:00Z",
+        isActive = true,
+        deviceCount = 1
+    ),
+    RoomDto(
+        id = 3,
+        name = "Garden Irrigation",
+        description = null,
+        createdAt = "2024-03-22T09:30:00Z",
+        isActive = false,
+        deviceCount = 0
+    )
+)
+val MockDevices = listOf(
+    DeviceDto(
+        id = "Main Motor 01",
+        online = true,
+        // This will always be 30 seconds ago
+        lastSeen = java.time.Instant.now().minusSeconds(30).toString(),
+        lastState = "ON",
+        lastPower = 12.5,
+        description = "hello1"
+    ),
+    DeviceDto(
+        id = "Borewell Pump",
+        online = true,
+        // This will always be 15 minutes ago
+        lastSeen = java.time.Instant.now().minus(15, java.time.temporal.ChronoUnit.MINUTES).toString(),
+        lastState = "OFF",
+        lastPower = 0.0,
+        description = "hello1"
+    ),
+    DeviceDto(
+        id = "Gate Light",
+        online = false,
+        // This will always be 2 hours ago
+        lastSeen = java.time.Instant.now().minus(2, java.time.temporal.ChronoUnit.HOURS).toString(),
+        lastState = "OFF",
+        lastPower = null,
+        description = "hello1"
+    )
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,10 +156,11 @@ fun HomeScreen(
     val rooms by viewModel.rooms.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
+    val enabledRoomIds = remember { mutableStateListOf<Int>() }
+
     LaunchedEffect(Unit) {
         viewModel.loadDevices(initial = true)
     }
-
     LaunchedEffect(uiState.snackbarMessage) {
         val msg = uiState.snackbarMessage
         if (msg != null) {
@@ -64,343 +170,205 @@ fun HomeScreen(
     }
 
     Scaffold(
+        containerColor = AppBackground,
         topBar = {
             TopAppBar(
-                title = { Text("My Devices") },
+                title = { AppTitleText(text = stringResource(R.string.smart_motor_app)) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = AppBackground,
+                    actionIconContentColor = TextPrimary
+                ),
                 actions = {
                     IconButton(onClick = onAddDevice) {
-                        Icon(Icons.Default.Add, contentDescription = "Add device")
+                        Icon(Icons.Default.Add, contentDescription = "Add device", tint = cobaltBlue)
                     }
                     IconButton(onClick = onCreateRoom) {
-                        Icon(Icons.Default.AddHome, contentDescription = "Create room")
+                        Icon(Icons.Default.AddHome, contentDescription = "Create room", tint = cobaltBlue)
                     }
-                    Button(onClick = onLogout) { Text("Log out") }
+                    IconButton(onClick = onLogout) {
+                        Icon(Icons.Default.Logout, contentDescription = "Log out", tint = cobaltBlue)
+                    }
                 },
             )
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-    ) { padding ->
-        when {
-            uiState.isInitialLoading && uiState.devices.isEmpty() -> {
-                Box(
-                    modifier = Modifier.fillMaxSize().padding(padding),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CircularProgressIndicator()
-                }
-            }
-            uiState.backendOffline -> {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding)
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.CloudOff,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(bottom = 16.dp),
-                    )
-                    Text(
-                        text = "Server unreachable",
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Text(
-                        text = "Check internet or try again",
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
-                    )
-                    Button(onClick = { viewModel.loadDevices(initial = true) }) {
-                        Text("Retry")
-                    }
-                }
-            }
-            uiState.devices.isEmpty() -> {
-                Box(
-                    modifier = Modifier.fillMaxSize().padding(padding),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = "No devices connected",
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                        Text(
-                            text = "Power on your controller to see it here",
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(top = 8.dp),
-                        )
-                    }
-                }
-            }
-            else -> {
-                val deviceList = uiState.devices.values.toList()
-                LazyColumn(
-                    modifier = Modifier
-                        .padding(padding)
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    item {
-                        Text(
-                            "Rooms",
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.padding(bottom = 8.dp),
-                        )
-                    }
-                    items(rooms, key = { it.id }) { room ->
-                        RoomCard(
-                            room = room,
-                            onClick = { onRoomClick(room.id, room.name) },
-                            onTurnOn = { viewModel.setRoomOn(room.id) },
-                            onTurnOff = { viewModel.setRoomOff(room.id) },
-                            onSchedule = { onScheduleRoom(room.id) }
-                        )
-                    }
-                    item {
-                        Text(
-                            "Devices",
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
-                        )
-                    }
-                    items(deviceList, key = { it.id }) { device ->
-                        DeviceRow(
-                            device = device,
-                            turningId = uiState.turningId,
-                            onTurnOn = { viewModel.setDeviceOn(device.id) },
-                            onTurnOff = { viewModel.setDeviceOff(device.id) },
-                            onSchedule = { onScheduleDevice(device.id) },
-                            onDelete = { viewModel.removeDevice(device.id) },
-                            onClick = { onDeviceClick(device.id) },
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun RoomCard(
-    room: RoomDto,
-    onClick: () -> Unit = {},
-    onTurnOn: () -> Unit = {},
-    onTurnOff: () -> Unit = {},
-    onSchedule: () -> Unit = {},
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().clickable { onClick() },
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = onAddDevice, // Or your specific action
+                containerColor = cobaltBlue,
+                contentColor = Color.White,
+                shape = RoundedCornerShape(16.dp),
+                elevation = FloatingActionButtonDefaults.elevation(8.dp)
             ) {
-                Column {
-                    Text(
-                        text = room.name,
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Text(
-                        text = "${room.deviceCount} devices",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
-                }
                 Icon(
-                    imageVector = Icons.Default.MeetingRoom,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "Add Device",
+                    modifier = Modifier.size(28.dp)
                 )
             }
-            
-            Row(
-                modifier = Modifier.padding(top = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Button(onClick = onTurnOn) {
-                    Text("All ON")
-                }
-                Button(onClick = onTurnOff) {
-                    Text("All OFF")
-                }
-                OutlinedButton(onClick = onSchedule) {
-                    Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Schedule")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DeviceRow(
-    device: DeviceDto,
-    turningId: String?,
-    onTurnOn: () -> Unit,
-    onTurnOff: () -> Unit,
-    onSchedule: () -> Unit,
-    onDelete: () -> Unit,
-    onClick: () -> Unit,
-) {
-    val isPending = device.id == turningId
-    val powerW = (device.lastPower ?: 0.0).toFloat().coerceIn(0f, POWER_MAX_W.toFloat())
-    val powerProgress = powerW / POWER_MAX_W
-    val animatedProgress by animateFloatAsState(
-        targetValue = powerProgress,
-        animationSpec = tween(durationMillis = 300),
-        label = "power",
-    )
-    val powerBarColor = when {
-        powerW < 20 -> Color.Gray
-        powerW < 300 -> Color(0xFF4CAF50)
-        powerW < 700 -> Color(0xFFFF9800)
-        else -> Color(0xFFF44336)
-    }
-    val isOn = device.lastState.equals("ON", ignoreCase = true)
-    val runningSeconds = remember { mutableIntStateOf(0) }
-    LaunchedEffect(device.lastState) {
-        if (!isOn) {
-            runningSeconds.intValue = 0
-            return@LaunchedEffect
-        }
-        runningSeconds.intValue = 0
-        while (true) {
-            delay(1000)
-            runningSeconds.intValue += 1
-        }
-    }
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val pulse by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.02f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(800, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "pulse",
-    )
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .scale(if (isOn) pulse else 1f),
-        onClick = onClick,
-    ) {
-        Column(
+        },
+        // Optional: Ensures the FAB doesn't overlap with the bottom of the list
+        floatingActionButtonPosition = FabPosition.End
+    ) { padding ->
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+                .fillMaxSize()
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = device.id,
-                    style = MaterialTheme.typography.titleMedium,
+
+            Image(
+                painter = painterResource(id = R.drawable.doodle_bg),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                colorFilter = ColorFilter.tint(
+                    AppBackground.copy(alpha = 0.8f),
+                    blendMode = BlendMode.SrcOver
                 )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(10.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (device.online) Color(0xFF4CAF50)
-                                else MaterialTheme.colorScheme.error,
-                            ),
-                    )
-                    Text(
-                        text = if (device.online) "Online" else "Offline",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (device.online) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        modifier = Modifier.padding(start = 6.dp),
-                    )
-                    IconButton(onClick = onDelete, modifier = Modifier.padding(start = 8.dp).size(24.dp)) {
-                        Icon(Icons.Default.Delete, contentDescription = "Remove Device", tint = MaterialTheme.colorScheme.error)
-                    }
-                }
-            }
-            Row(
-                modifier = Modifier.padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                Text(
-                    text = "State: ${device.lastState ?: "—"}",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Text(
-                    text = "Live Power: %.0f W".format(powerW),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                if (isOn) {
-                    val sec = runningSeconds.intValue
-                    Text(
-                        text = "%d:%02d".format(sec / 60, sec % 60),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-            }
+            )
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(8.dp)
-                    .padding(top = 8.dp)
-                    .clip(MaterialTheme.shapes.small)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(start = 12.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(animatedProgress)
-                        .height(8.dp)
-                        .background(powerBarColor),
-                )
-            }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (isPending) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                    )
+                if (uiState.backendOffline){
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize(),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.CloudOff,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(bottom = 16.dp),
+                        )
+                        Text(
+                            text = "Server unreachable",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text(
+                            text = "Check internet or try again",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
+                        )
+                        Button(onClick = { viewModel.loadDevices(initial = true) }) {
+                            Text("Retry")
+                        }
+                    }
+                }else  {
+                    LazyColumn(modifier = Modifier) {
+                        item {
+                            AppTitleText(text = "Welcome Shalini!", modifier = Modifier.padding(top = 8.dp))
+                        }
+                        item {
+                            AppSubtitleText(text = stringResource(id = R.string.rooms),modifier = Modifier.padding(vertical = 8.dp))
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                items(MockRooms, key = { it.id }) { room -> //change to rooms
+                                    val isCurrentlyOn = enabledRoomIds.contains(room.id)
+                                    RoomCardHome(
+                                        room = room,
+                                        onClick = { onRoomClick(room.id, room.name) },
+                                        isRoomEnabled = isCurrentlyOn,
+                                        onToggle = { shouldTurnOn ->
+                                            if (shouldTurnOn) {
+                                                enabledRoomIds.add(room.id)
+                                                viewModel.setRoomOn(room.id) // Call API
+                                            } else {
+                                                enabledRoomIds.remove(room.id)
+                                                viewModel.setRoomOff(room.id) // Call API
+                                            }
+                                        },
+                                        onSchedule = { onScheduleRoom(room.id) }
+                                    )
+                                }
+                            }
+                        }
+                        item {
+                            AppSubtitleText(text = stringResource(id = R.string.devices),modifier = Modifier.padding(vertical = 8.dp))
+                        }
+
+                        if (MockDevices.isEmpty()){
+                            item {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(
+                                            text = "No devices connected",
+                                            style = MaterialTheme.typography.titleMedium,
+                                        )
+                                        Text(
+                                            text = "Power on your controller to see it here",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            modifier = Modifier.padding(top = 8.dp),
+                                        )
+                                    }
+                                }
+                            }
+                        }else{
+                            // Group devices into pairs for a 2-column grid
+                            val chunkedDevices = MockDevices.chunked(2)
+                            // 1. REMOVE the chunking logic. Use the plain list of devices.
+                            items(chunkedDevices, key = { it.first().id  }) { rowDevices ->
+                                // 2. No 'Row', no 'weight'. Just the DeviceRow by itself.
+                                // This allows it to take the FULL width and only the height it needs.
+                                for (device in rowDevices){
+                                    DeviceCardHome (
+                                        device = device,
+                                        turningId = uiState.turningId,
+                                        onTurnOn = { viewModel.setDeviceOn(device.id) },
+                                        onTurnOff = { viewModel.setDeviceOff(device.id) },
+                                        onSchedule = { onScheduleDevice(device.id) },
+                                        onClick = { onDeviceClick(device.id) }
+                                    )
+                                }
+                            }
+                        }
+
+                    }
                 }
-                Button(
-                    onClick = onTurnOn,
-                    enabled = !isPending,
-                ) { Text("ON") }
-                Button(
-                    onClick = onTurnOff,
-                    enabled = !isPending,
-                ) { Text("OFF") }
-                
-                OutlinedButton(
-                    onClick = onSchedule,
-                    enabled = !isPending,
-                ) {
-                    Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Schedule")
+                if (uiState.isInitialLoading){
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator()
+                    }
                 }
             }
         }
     }
 }
+
+@Composable
+fun getRelativeTime(isoString: String?): String {
+    // If the isoString is the same for all devices in your mock file,
+    // the UI will look the same. Check your MockData.kt!
+    return remember(isoString) {
+        if (isoString.isNullOrBlank()) return@remember "Never"
+
+        try {
+            val instant = java.time.Instant.parse(isoString)
+            val now = java.time.Instant.now()
+            val diffInSeconds = java.time.Duration.between(instant, now).seconds
+
+            // Debug: print(diffInSeconds) to see if it's actually 0 for all
+
+            when {
+                diffInSeconds < 60 -> "Just now"
+                diffInSeconds < 3600 -> "${diffInSeconds / 60} mins ago"
+                diffInSeconds < 86400 -> "${diffInSeconds / 3600} hours ago"
+                else -> "${diffInSeconds / 86400} days ago"
+            }
+        } catch (e: Exception) {
+            "Unknown"
+        }
+    }
+}
+
+
+

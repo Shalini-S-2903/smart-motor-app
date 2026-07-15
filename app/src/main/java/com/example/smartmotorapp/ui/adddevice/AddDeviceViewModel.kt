@@ -2,6 +2,7 @@ package com.example.smartmotorapp.ui.adddevice
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.smartmotorapp.data.enums.BleSetupStep
 import com.example.smartmotorapp.data.remote.ClaimRequestDto
 import com.example.smartmotorapp.data.remote.ClaimResponseDto
 import com.example.smartmotorapp.di.BackendProvider
@@ -24,9 +25,15 @@ data class AddDeviceUiState(
     val errorMessage: String? = null,
     val isProvisioning: Boolean = false,
     val provisionSuccess: Boolean = false,
+    val showBottomSheet: Boolean = false, // Start hidden while we check system state
+    val currentSetupStep: BleSetupStep = BleSetupStep.PERMISSION_CHECK,
+    val scannedMotors: List<String> = emptyList(),
+    val selectedMotorName: String? = null,
     val wifiSsid: String = "",
     val wifiPass: String = "",
     val deviceId: String? = null,
+    val deviceTitle: String = "",
+    val deviceDescription: String = ""
 )
 
 class AddDeviceViewModel : ViewModel() {
@@ -48,10 +55,55 @@ class AddDeviceViewModel : ViewModel() {
         _uiState.update { it.copy(wifiPass = value, errorMessage = null) }
     }
 
+    fun updateDeviceTitle(value: String) {
+        _uiState.update { it.copy(deviceTitle = value) }
+    }
+
+    fun updateDeviceDescription(value: String) {
+        _uiState.update { it.copy(deviceDescription = value) }
+    }
+
     fun clearError() {
         _uiState.update { it.copy(errorMessage = null) }
     }
 
+    // --- Inside your AddDeviceViewModel.kt ---
+
+    fun advanceToStep(step: BleSetupStep) {
+
+
+
+
+        _uiState.update { it.copy(currentSetupStep = step) }
+    }
+
+    fun updateBottomSheetVisibility(show: Boolean) {
+        _uiState.update { it.copy(showBottomSheet = show) }
+    }
+
+    fun selectDiscoveredMotor(motorName: String) {
+        _uiState.update {
+            it.copy(
+                selectedMotorName = motorName,
+                currentSetupStep = BleSetupStep.SETUP_COMPLETE,
+                showBottomSheet = false
+            )
+        }
+    }
+
+    fun resetSetupState() {
+        _uiState.update { currentState ->
+            currentState.copy(
+                selectedMotorName = null,
+                currentSetupStep = BleSetupStep.PERMISSION_CHECK,
+                showBottomSheet = false, // Enforce sheet closure on reset
+                wifiSsid = "",
+                wifiPass = "",
+                deviceTitle = "",
+                deviceDescription = ""
+            )
+        }
+    }
     fun claimDevice() {
         if (_uiState.value.isLoading) return
         val deviceId = _uiState.value.deviceId ?: return

@@ -8,6 +8,11 @@ data class DeviceDto(
     @SerializedName("last_seen") val lastSeen: String?,
     @SerializedName("last_state") val lastState: String?,
     @SerializedName("last_power") val lastPower: Double?,
+    @SerializedName("description") val description: String,
+    @SerializedName("phaseR") val phaseR: Boolean = true,
+    @SerializedName("phaseY") val phaseY: Boolean = true,
+    @SerializedName("phaseB") val phaseB: Boolean = true,
+    @SerializedName("waterLevelStatus") val waterLevelStatus: String = "FULL"
 )
 
 data class DevicesResponseDto(

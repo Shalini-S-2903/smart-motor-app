@@ -19,7 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun RoomCard(
+fun RoomDetailCard(
     room: com.example.smartmotorapp.data.remote.RoomDto,
     onClick: () -> Unit,
     modifier: Modifier = Modifier

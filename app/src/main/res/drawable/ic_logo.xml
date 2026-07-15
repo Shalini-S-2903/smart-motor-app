@@ -1,0 +1,56 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="288dp"
+    android:height="288dp"
+    android:viewportWidth="288"
+    android:viewportHeight="288">
+
+    <!-- Heavy Industrial Hexagonal Base Casing -->
+    <path
+        android:pathData="M144,44 L230.6,94 L230.6,194 L144,244 L57.4,194 L57.4,94 Z"
+        android:fillColor="#1E3A8A"/> <!-- Rich Cobalt Blue -->
+
+    <!-- Outer Tech Accent Frame Layer -->
+    <path
+        android:pathData="M144,56 L219.6,100 L219.6,188 L144,232 L68.4,188 L68.4,100 Z"
+        android:strokeColor="#3B82F6"
+        android:strokeWidth="4"
+        android:fillColor="@android:color/transparent"/>
+
+    <!-- Abstract Induction Stator Core / Telemetry Hub (Center White Elements) -->
+    <!-- Central Heavy Axis Rotor Point -->
+    <path
+        android:pathData="M144,144m-16,0a16,16 0,1 1,32 0a16,16 0,1 1,-32 0"
+        android:fillColor="#FFFFFF"/>
+
+    <!-- Concentric Technical Power Ring -->
+    <path
+        android:pathData="M144,144m-36,0a36,36 0,1 1,72 0a36,36 0,1 1,-72 0"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="6"
+        android:fillColor="@android:color/transparent"/>
+
+    <!-- Heavy Core Rays / Induction Coils -->
+    <!-- Vertical Channels -->
+    <path
+        android:pathData="M144,76 L144,96 M144,192 L144,212"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="8"
+        android:strokeLineCap="square"/>
+    <!-- Horizontal Channels -->
+    <path
+        android:pathData="M76,144 L96,144 M192,144 L212,144"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="8"
+        android:strokeLineCap="square"/>
+    <!-- Diagonal Channels -->
+    <path
+        android:pathData="M96,96 L110,110 M178,178 L192,192"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="8"
+        android:strokeLineCap="square"/>
+    <path
+        android:pathData="M96,188 L110,174 M178,110 L192,96"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="8"
+        android:strokeLineCap="square"/>
+</vector>

@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -27,7 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.example.smartmotorapp.ui.components.RoomCard
+import com.example.smartmotorapp.ui.components.RoomDetailCard
 
 @Composable
 fun RoomScreen(
@@ -82,7 +81,7 @@ fun RoomScreen(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp)
             ) {
                 items(uiState.rooms) { room ->
-                    RoomCard(
+                    RoomDetailCard(
                         room = room,
                         onClick = { onNavigateToRoomDetail(room.id) }
                     )

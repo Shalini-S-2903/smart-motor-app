@@ -19,6 +19,21 @@ data class DeviceDetailUiState(
     val isLoading: Boolean = true,
     val error: String? = null,
     val turning: Boolean = false,
+    // ┌────────────────────────────────────────────────────────┐
+    // │ UNIFIED SENSOR PREFERENCES INSIDE STATE               │
+    // └────────────────────────────────────────────────────────┘
+    val isWaterSensorEnabled: Boolean = true,
+    val isTankFull: Boolean = true,
+    val autoStartWhenEmpty: Boolean = false,
+    val autoStopWhenFull: Boolean = false,
+    val isDryRunSensorEnabled: Boolean = true,
+    val isOverloadSensorEnabled: Boolean = true,
+    val isPhaseSensorEnabled: Boolean = true,
+    // ┌────────────────────────────────────────────────────────┐
+    // │ NEW: DYNAMIC USER CONFIGURABLE THRESHOLDS              │
+    // └────────────────────────────────────────────────────────┘
+    val dryRunThreshold: Float = 5.0f,     // User adjustable range: 0.0 to 15.0 A
+    val overloadThreshold: Float = 20.0f    // User adjustable range: 15.0 to 30.0 A
 )
 
 class DeviceDetailViewModel(
@@ -29,6 +44,36 @@ class DeviceDetailViewModel(
 
     private val _uiState = MutableStateFlow(DeviceDetailUiState(deviceId))
     val uiState: StateFlow<DeviceDetailUiState> = _uiState.asStateFlow()
+
+    //State Updaters
+    fun onSensorEvent(event: SensorEvent) {
+        when (event) {
+            is SensorEvent.ToggleWaterSensor -> {
+                _uiState.update { it.copy(isWaterSensorEnabled = event.isEnabled) }
+            }
+            is SensorEvent.ToggleAutoStart -> {
+                _uiState.update { it.copy(autoStartWhenEmpty = event.isEnabled) }
+            }
+            is SensorEvent.ToggleAutoStop -> {
+                _uiState.update { it.copy(autoStopWhenFull = event.isEnabled) }
+            }
+            is SensorEvent.ToggleDryRun -> {
+                _uiState.update { it.copy(isDryRunSensorEnabled = event.isEnabled) }
+            }
+            is SensorEvent.ToggleOverload -> {
+                _uiState.update { it.copy(isOverloadSensorEnabled = event.isEnabled) }
+            }
+            is SensorEvent.TogglePhase -> {
+                _uiState.update { it.copy(isPhaseSensorEnabled = event.isEnabled) }
+            }
+            is SensorEvent.UpdateDryRunThreshold -> {
+                _uiState.update { it.copy(dryRunThreshold = event.value) }
+            }
+            is SensorEvent.UpdateOverloadThreshold -> {
+                _uiState.update { it.copy(overloadThreshold = event.value) }
+            }
+        }
+    }
 
     init {
         refresh()

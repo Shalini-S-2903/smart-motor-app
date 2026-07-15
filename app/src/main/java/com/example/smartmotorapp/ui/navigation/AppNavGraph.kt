@@ -1,5 +1,6 @@
 package com.example.smartmotorapp.ui.navigation
 
+import DeviceDetailScreen
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
@@ -8,7 +9,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -16,12 +21,12 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
+import com.example.smartmotorapp.MainActivity
 import com.example.smartmotorapp.di.BackendProvider
 import com.example.smartmotorapp.ui.activity.ActivityScreen
 import com.example.smartmotorapp.ui.activity.ActivityViewModel
 import com.example.smartmotorapp.ui.adddevice.AddDeviceScreen
 import com.example.smartmotorapp.ui.adddevice.AddDeviceViewModel
-import com.example.smartmotorapp.ui.detail.DeviceDetailScreen
 import com.example.smartmotorapp.ui.detail.DeviceDetailViewModel
 import com.example.smartmotorapp.ui.detail.DeviceDetailViewModelFactory
 import com.example.smartmotorapp.ui.home.HomeScreen
@@ -37,6 +42,12 @@ import com.example.smartmotorapp.ui.rooms.RoomCreateScreen
 import com.example.smartmotorapp.ui.rooms.RoomCreateViewModel
 import com.example.smartmotorapp.ui.schedules.ScheduleCreateScreen
 import com.example.smartmotorapp.ui.schedules.ScheduleCreateViewModel
+import com.example.smartmotorapp.ui.theme.AppBackground
+import com.example.smartmotorapp.ui.theme.InActiveBorder
+import com.example.smartmotorapp.ui.theme.InActiveText
+import com.example.smartmotorapp.ui.theme.TextPrimary
+import com.example.smartmotorapp.ui.theme.White
+import com.example.smartmotorapp.ui.theme.cobaltBlue
 import java.net.URLDecoder
 import java.net.URLEncoder
 
@@ -51,6 +62,7 @@ fun AppNavGraph(
 ) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
+    val context = LocalContext.current
 
     // Only show bottom bar on core pages
     val showBottomBar = currentDestination?.route in listOf(Screen.Home.route, Screen.Activity.route)
@@ -58,13 +70,38 @@ fun AppNavGraph(
     Scaffold(
         bottomBar = {
             if (showBottomBar) {
-                NavigationBar {
+                NavigationBar(
+                    // Important: Matches the overall premium dark background
+                    containerColor = White,
+                    contentColor = TextPrimary,
+                    tonalElevation = 8.dp
+                ) {
                     val items = listOf(Screen.Home, Screen.Activity)
                     items.forEach { screen ->
+                        val isSelected = currentDestination?.hierarchy?.any { it.route == screen.route } == true
+
                         NavigationBarItem(
-                            icon = { Icon(screen.icon, contentDescription = null) },
-                            label = { Text(screen.label, fontWeight = FontWeight.Bold) },
-                            selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
+                            // Active icon glows, inactive is muted gray
+                            icon = {
+                                Icon(
+                                    imageVector = screen.icon,
+                                    contentDescription = null,
+                                    tint = if (isSelected) cobaltBlue else InActiveBorder
+                                )
+                            },
+                            // Active text is white, inactive is muted
+                            label = {
+                                Text(
+                                    text = screen.label,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isSelected) cobaltBlue else InActiveBorder,
+                                    fontSize = 12.sp // Ensure it fits the mobile look
+                                )
+                            },
+                            selected = isSelected,
+                            colors = NavigationBarItemDefaults.colors(
+                                indicatorColor = AppBackground // Subtle highlight box
+                            ),
                             onClick = {
                                 navController.navigate(screen.route) {
                                     popUpTo(navController.graph.findStartDestination().id) {
@@ -87,16 +124,20 @@ fun AppNavGraph(
         ) {
             composable("splash") {
                 SplashScreen(
-                    onNavigateToLogin = {
-                        navController.navigate("login") {
-                            popUpTo("splash") { inclusive = true }
+                    onSplashFinished = {
+                        val savedToken = BackendProvider.tokenStore.getAccessToken()
+                        val isUserLoggedIn = !savedToken.isNullOrBlank()
+
+                        if (isUserLoggedIn) {
+                            navController.navigate(Screen.Home.route) {
+                                popUpTo("splash") { inclusive = true }
+                            }
+                        } else {
+                            navController.navigate("login") {
+                                popUpTo("splash") { inclusive = true }
+                            }
                         }
-                    },
-                    onNavigateToHome = {
-                        navController.navigate(Screen.Home.route) {
-                            popUpTo("splash") { inclusive = true }
-                        }
-                    },
+                    }
                 )
             }
 
@@ -150,6 +191,17 @@ fun AppNavGraph(
                     },
                     viewModel = viewModel,
                 )
+
+                // We are temporarily showing the StyleGuide instead of the real HomeScreen
+                /*StyleGuideScreen(
+                    onBack = {
+                        // Optional: If you want a way to go back or logout from here
+                        BackendProvider.tokenStore.clear()
+                        navController.navigate("login") {
+                            popUpTo(Screen.Home.route) { inclusive = true }
+                        }
+                    }
+                )*/
             }
 
             composable("createRoom") {
@@ -188,9 +240,7 @@ fun AppNavGraph(
             }
 
             composable("addDevice") {
-                val viewModel: AddDeviceViewModel = viewModel()
                 AddDeviceScreen(
-                    viewModel = viewModel,
                     onNavigateBack = { navController.popBackStack() },
                 )
             }
@@ -207,6 +257,8 @@ fun AppNavGraph(
                     deviceId = deviceId,
                     onBack = { navController.popBackStack() },
                     viewModel = viewModel,
+                    onNavigateToScheduler = {},
+                    onNavigateToInstantTimer = {}
                 )
             }
 

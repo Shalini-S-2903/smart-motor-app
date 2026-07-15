@@ -1,3 +1,15 @@
 <resources>
     <string name="app_name">SmartMotorApp</string>
+<!--    home screen-->
+    <string name="smart_motor_app">Smart Motor App</string>
+    <string name="my_devices">My Devices</string>
+    <string name="rooms">Rooms</string>
+    <string name="devices">Devices</string>
+    <string name="all_on">All ON</string>
+    <string name="all_off">All OFF</string>
+    <string name="global_off">Global Off</string>
+    <string name="global_on">Global On</string>
+    <string name="schedule">Schedule</string>
+    <string name="online">Online</string>
+    <string name="offline">Offline</string>
 </resources>

@@ -24,7 +24,7 @@ android {
             buildConfigField(
                 "String",
                 "BASE_URL",
-                "\"https://cyan-moles-switch.loca.lt/\"",
+                "\"http://10.0.2.2:8000/\"",
             )
         }
         release {
@@ -81,6 +81,11 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    // Add this line to resolve Theme.AppCompat errors
+    implementation("androidx.appcompat:appcompat:1.6.1")
+
+    // Your other dependencies (Compose, SplashScreen, etc.) remain here...
+    implementation("androidx.core:core-splashscreen:1.0.1")
 
     implementation("androidx.navigation:navigation-compose:2.7.7")
 
@@ -90,6 +95,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
     implementation(libs.androidx.security.crypto)
+    implementation(libs.espresso.core)
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 
     testImplementation(libs.junit)
